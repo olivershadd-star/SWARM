@@ -65,7 +65,7 @@ C:\Program Files\Common Files\VST3\
 
 Puis lancer un nouveau scan des plugins VST3 dans Ableton Live. Avec Live Lite, vérifier que la version installée prend en charge les VST3.
 
-**Compilation GitHub Actions :** un workflow `.github/workflows/windows-build.yml` peut compiler automatiquement sur Windows 2022 et produire une archive VST3/Standalone lorsque le dossier est ajouté à un dépôt GitHub (idéalement privé). Aucune publication automatique n’est prévue.
+**Compilation GitHub Actions :** un workflow `.github/workflows/windows-build.yml` peut compiler automatiquement sur Windows 2022 et produire une archive VST3/Standalone lorsque le dossier est ajouté à un dépôt GitHub . Aucune publication automatique n’est prévue.
 
 ## Utilisation rapide
 
