@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
-project(ANKS_Swarm_01 VERSION 0.1.0 LANGUAGES CXX)
+project(ANKS_Swarm_01 VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Set -DANKS_JUCE_PATH=/path/to/juce to use an existing JUCE checkout.
 # Otherwise the locked official JUCE 8 security release is downloaded once.
@@ -59,6 +60,11 @@ target_link_libraries(ANKS_Swarm_01 PRIVATE
            juce::juce_recommended_warning_flags
 )
 
+target_sources(ANKS_Swarm_01_Standalone PRIVATE Source/PortableStandalone.cpp)
+target_compile_definitions(ANKS_Swarm_01_Standalone PRIVATE JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1)
+target_include_directories(ANKS_Swarm_01_Standalone PRIVATE
+    "$<TARGET_PROPERTY:ANKS_Swarm_01,JUCE_GENERATED_SOURCES_DIRECTORY>")
+
 # Standalone test is independent of JUCE and may also be compiled with g++.
 option(ANKS_BUILD_DSP_TESTS "Build headless DSP smoke tests" ON)
 if (ANKS_BUILD_DSP_TESTS)
@@ -69,4 +75,16 @@ if (ANKS_BUILD_DSP_TESTS)
     add_executable(swarm_dsp_stress Tests/stress_dsp.cpp Source/DSP/SwarmEngine.h)
     target_compile_features(swarm_dsp_stress PRIVATE cxx_std_17)
     add_test(NAME SwarmStress COMMAND swarm_dsp_stress)
+endif()
+
+if (WIN32)
+    add_custom_target(swarm_windows_package
+        COMMAND "${CMAKE_COMMAND}"
+            "-DPLUGIN_BINARY=$<TARGET_FILE:ANKS_Swarm_01_VST3>"
+            "-DSTANDALONE=$<TARGET_FILE:ANKS_Swarm_01_Standalone>"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/packages/$<CONFIG>"
+            "-DVERSION=${PROJECT_VERSION}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PackageWindows.cmake"
+        DEPENDS ANKS_Swarm_01_VST3 ANKS_Swarm_01_Standalone
+        VERBATIM)
 endif()

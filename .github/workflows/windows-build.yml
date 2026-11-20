@@ -18,9 +18,11 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Run engine tests
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Upload plugin binaries
+      - name: Package Windows x64
+        run: cmake --build build --config Release --target swarm_windows_package
+      - name: Upload Windows archives
         uses: actions/upload-artifact@v4
         with:
           name: ANKS-Swarm-01-Windows-Release
-          path: build/ANKS_Swarm_01_artefacts/Release/
+          path: build/packages/Release/*.zip
           if-no-files-found: error

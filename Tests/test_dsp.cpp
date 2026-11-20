@@ -1,5 +1,4 @@
 #include "../Source/DSP/SwarmEngine.h"
-#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -46,9 +45,17 @@ int main (int argc, char** argv)
     const std::array<anks::Patch, 4> scenes = {a, b, c, d};
     const auto atA = anks::interpolateScenes (scenes, 0.0f, 0.0f);
     const auto atD = anks::interpolateScenes (scenes, 1.0f, 1.0f);
-    assert (atA.detuneA == a.detuneA && atD.detuneA == d.detuneA);
+    if (! (atA.detuneA == a.detuneA && atD.detuneA == d.detuneA))
+    {
+        std::cerr << "DSP check failed at line " << __LINE__ << '\n';
+        return 1;
+    }
     const auto center = anks::interpolateScenes (scenes, 0.5f, 0.5f);
-    assert (std::abs (center.detuneA - (a.detuneA+b.detuneA+c.detuneA+d.detuneA)*0.25f) < 0.0001f);
+    if (! (std::abs (center.detuneA - (a.detuneA+b.detuneA+c.detuneA+d.detuneA)*0.25f) < 0.0001f))
+    {
+        std::cerr << "DSP check failed at line " << __LINE__ << '\n';
+        return 1;
+    }
     engine.setPatch (a);
     engine.noteOn (48, 0.94f);
     engine.noteOn (55, 0.78f);
@@ -63,13 +70,21 @@ int main (int argc, char** argv)
         if (i == sr * 3) { engine.noteOff (48); engine.noteOff (55); engine.noteOff (60); }
         float l = 0, r = 0;
         engine.renderSample (l, r);
-        assert (std::isfinite (l) && std::isfinite (r));
+        if (! (std::isfinite (l) && std::isfinite (r)))
+        {
+            std::cerr << "DSP check failed at line " << __LINE__ << '\n';
+            return 1;
+        }
         samples.push_back (l); samples.push_back (r);
         peak = std::max ({peak, std::abs (l), std::abs (r)});
         energy += l*l + r*r;
     }
     std::cout << "DSP tests passed; peak=" << peak << ", RMS=" << std::sqrt (energy / static_cast<float> (samples.size()))
               << ", voices=" << engine.getActiveVoiceCount() << '\n';
-    assert (peak > 0.001f && peak <= 1.0f && energy > 1.0f);
+    if (! (peak > 0.001f && peak <= 1.0f && energy > 1.0f))
+    {
+        std::cerr << "DSP check failed at line " << __LINE__ << '\n';
+        return 1;
+    }
     if (argc > 1) { saveWav (argv[1], samples, sr); std::cout << "WAV rendered: " << argv[1] << '\n'; }
 }

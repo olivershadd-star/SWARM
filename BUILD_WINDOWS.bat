@@ -27,10 +27,13 @@ if errorlevel 1 goto error
 ctest --test-dir build -C Release --output-on-failure
 if errorlevel 1 goto error
 
+cmake --build build --config Release --target swarm_windows_package
+if errorlevel 1 goto error
+
 echo.
 echo COMPILATION REUSSIE.
 echo VST3 et Standalone dans build\ANKS_Swarm_01_artefacts\Release\
-echo Chercher le sous-dossier VST3 et le sous-dossier Standalone.
+echo Archives ZIP dans build\packages\Release\.
 pause
 exit /b 0
 :error

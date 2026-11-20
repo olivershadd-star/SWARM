@@ -32,6 +32,7 @@ Un **synthétiseur original** à deux essaims de dents de scie et morphing XY. S
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
+cmake --build build --config Release --target swarm_windows_package
 ```
 
 Pour réutiliser un JUCE déjà installé et éviter toute connexion réseau :
@@ -47,6 +48,14 @@ Résultats attendus :
 build/ANKS_Swarm_01_artefacts/Release/VST3/ANKS SWARM 01.vst3
 build/ANKS_Swarm_01_artefacts/Release/Standalone/ANKS SWARM 01.exe
 ```
+
+La cible `swarm_windows_package` prépare deux ZIP dans
+`build/packages/Release/`. L’archive **Portable** contient l’application
+standalone. Extraire son EXE dans un dossier accessible en écriture, puis le
+lancer directement. Le patch et les réglages audio/MIDI sont conservés dans
+`SWARM.settings`, à côté de l’EXE. Dans **Options**, sélectionner la sortie
+audio et l’entrée MIDI. Pour déplacer le standalone avec ses réglages,
+emporter l’EXE et ce fichier.
 
 Le dossier `.vst3` est un bundle. Pour installer le VST3 sur Windows, copier ce bundle dans :
 

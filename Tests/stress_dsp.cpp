@@ -1,6 +1,5 @@
 #include "../Source/DSP/SwarmEngine.h"
 #include <array>
-#include <cassert>
 #include <cmath>
 #include <iostream>
 
@@ -29,11 +28,19 @@ int main()
             }
             float l = 0.0f, r = 0.0f;
             synth.renderSample (l, r);
-            assert (std::isfinite (l) && std::isfinite (r));
+            if (! (std::isfinite (l) && std::isfinite (r)))
+            {
+                std::cerr << "DSP check failed at line " << __LINE__ << '\n';
+                return 1;
+            }
             peak = std::max ({peak, std::abs (l), std::abs (r)});
         }
         synth.setSustainPedal (false);
-        assert (peak > 0.0f && peak <= 1.0001f);
+        if (! (peak > 0.0f && peak <= 1.0001f))
+        {
+            std::cerr << "DSP check failed at line " << __LINE__ << '\n';
+            return 1;
+        }
         std::cout << sampleRate << " Hz : stress OK (peak=" << peak << ")\n";
     }
 }

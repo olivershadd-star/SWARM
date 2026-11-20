@@ -146,9 +146,9 @@ void SwarmProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     const auto end = midi.end();
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        while (event != end && event->samplePosition <= sample)
+        while (event != end && (*event).samplePosition <= sample)
         {
-            const auto message = event->getMessage();
+            const auto message = (*event).getMessage();
             if (message.isNoteOn())
                 engine.noteOn (message.getNoteNumber(), message.getVelocity() / 127.0f);
             else if (message.isNoteOff())
@@ -179,12 +179,12 @@ void SwarmProcessor::getStateInformation (juce::MemoryBlock& destination)
         sceneState.addChild (child, -1, nullptr);
     }
     state.addChild (sceneState, -1, nullptr);
-    if (auto xml = state.createXml()) juce::copyXmlToBinary (*xml, destination);
+    if (auto xml = state.createXml()) copyXmlToBinary (*xml, destination);
 }
 
 void SwarmProcessor::setStateInformation (const void* data, int size)
 {
-    if (auto xml = juce::getXmlFromBinary (data, size))
+    if (auto xml = getXmlFromBinary (data, size))
     {
         auto restored = juce::ValueTree::fromXml (*xml);
         if (! restored.isValid() || ! restored.hasType (parameters.state.getType())) return;
