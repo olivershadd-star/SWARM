@@ -1,0 +1,12 @@
+/build/
+/.vs/
+*.sln
+*.vcxproj*
+*.user
+.DS_Store
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.vst3
+*.log
