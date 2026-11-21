@@ -59,14 +59,13 @@ double rms (const std::vector<float>& signal, const std::vector<float>* comparis
     return std::sqrt (sum / static_cast<double> (signal.size()));
 }
 
-bool checkControl (const char* id, bool morph)
+bool checkControl (const char* id)
 {
     SwarmProcessor processor;
     std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
     auto* slider = findSlider (*editor, id);
     if (slider == nullptr)
         return false;
-    setParameter (processor, "morphOn", morph ? 1.0f : 0.0f);
     const juce::String name (id);
     if (name.endsWith ("A") || name.endsWith ("B"))
         setParameter (processor, "mix", name.endsWith ("A") ? 0.0f : 1.0f);
@@ -79,7 +78,7 @@ bool checkControl (const char* id, bool morph)
     const auto high = render (processor);
 
     const auto relativeDifference = rms (low, &high) / std::max (rms (low), rms (high));
-    std::cout << (morph ? "MORPH " : "LIVE  ") << id << " " << lowParam << " -> "
+    std::cout << "LIVE " << id << " " << lowParam << " -> "
               << highParam << ", relative signal difference " << relativeDifference << '\n';
     const bool response = lowParam < highParam && std::isfinite (relativeDifference)
                           && relativeDifference > 0.02;
@@ -94,9 +93,26 @@ int main()
     for (const auto* id : {"detuneA", "widthA", "motionA", "detuneB", "widthB", "motionB",
                            "mix", "cutoff", "resonance", "drive", "attack", "release", "output"})
     {
-        passed = checkControl (id, false) && passed;
-        passed = checkControl (id, true) && passed;
+        passed = checkControl (id) && passed;
     }
+    SwarmProcessor morph;
+    setParameter (morph, "morphOn", 1.0f);
+    setParameter (morph, "morphX", 0.0f);
+    setParameter (morph, "morphY", 0.0f);
+    const auto top = render (morph);
+    setParameter (morph, "morphY", 1.0f);
+    const auto bottom = render (morph);
+    const auto scene = morph.getEffectivePatch();
+    passed = passed && rms (top, &bottom) > 0.02 && std::abs (scene.cutoff - morph.getScene (2).cutoff) < 0.1f;
+    morph.recallScene (2);
+    passed = passed && morph.parameters.getRawParameterValue ("morphOn")->load() < 0.5f
+             && std::abs (morph.getEffectivePatch().cutoff - scene.cutoff) < 0.1f;
+    juce::MemoryBlock state;
+    morph.getStateInformation (state);
+    SwarmProcessor reopened;
+    reopened.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
+    passed = passed && std::abs (reopened.getEffectivePatch().cutoff - scene.cutoff) < 0.1f;
+
     juce::AudioProcessor::setTypeOfNextNewPlugin (juce::AudioProcessor::wrapperType_Standalone);
     SwarmProcessor standalone;
     juce::AudioProcessor::setTypeOfNextNewPlugin (juce::AudioProcessor::wrapperType_Undefined);
@@ -119,5 +135,12 @@ int main()
     }
     const auto keyboardPeak = audio.getMagnitude (0, blockSize);
     std::cout << "Standalone keyboard signal peak: " << keyboardPeak << '\n';
-    return passed && keyboardVisible && silentWithoutInput && keyboardPeak > 0.01f ? 0 : 1;
+    standalone.prepareToPlay (sampleRate, blockSize);
+    standalone.setAuditionChord (true);
+    for (int block = 0; block < 16; ++block)
+        standalone.processBlock (audio, midi);
+    const auto chordPeak = audio.getMagnitude (0, blockSize);
+    std::cout << "Standalone chord signal peak: " << chordPeak << '\n';
+    return passed && keyboardVisible && silentWithoutInput && keyboardPeak > 0.01f
+           && chordPeak > 0.01f ? 0 : 1;
 }

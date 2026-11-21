@@ -1,299 +1,279 @@
 #include "PluginEditor.h"
-#include <cmath>
 
 namespace
 {
-const auto background = juce::Colour (0xff10121b);
-const auto panel = juce::Colour (0xff1f2130);
-const auto edge = juce::Colour (0xff34374a);
-const auto pink = juce::Colour (0xffff76b7);
-const auto lime = juce::Colour (0xffb8ed72);
-const auto blue = juce::Colour (0xff91a5ff);
-const auto white = juce::Colour (0xfff2f0f8);
-const auto muted = juce::Colour (0xffa5a7bb);
+const auto background = juce::Colour (0xff14131e);
+const auto ink = juce::Colour (0xfff8f5ff);
+const auto subdued = juce::Colour (0xffb5b1c7);
+const auto pink = juce::Colour (0xffff74b6);
+const auto lime = juce::Colour (0xffc4f469);
+const auto lilac = juce::Colour (0xffc4bbff);
+const auto panel = juce::Colour (0xff252338);
 
-void drawPanel (juce::Graphics& g, juce::Rectangle<int> rect, juce::Colour accent)
+void text (juce::Graphics& g, const juce::String& value, juce::Rectangle<int> box,
+           float size, juce::Colour colour, bool bold = false)
 {
-    auto r = rect.toFloat();
-    g.setColour (panel);
-    g.fillRoundedRectangle (r, 16.0f);
-    g.setColour (edge);
-    g.drawRoundedRectangle (r.reduced (0.5f), 16.0f, 1.0f);
-    g.setColour (accent.withAlpha (0.8f));
-    g.fillRoundedRectangle (r.getX() + 20.0f, r.getY() + 1.0f, r.getWidth() - 40.0f, 3.0f, 1.5f);
+    g.setColour (colour);
+    g.setFont (juce::Font (juce::FontOptions (size).withStyle (bold ? "Bold" : "Regular")));
+    g.drawFittedText (value, box, juce::Justification::centredLeft, 1);
 }
 
-void drawDetune (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour colour, float cents)
+void tile (juce::Graphics& g, juce::Rectangle<int> box, juce::Colour fill)
 {
-    const float mid = static_cast<float> (area.getCentreX());
-    const float span = static_cast<float> (area.getWidth()) * 0.45f;
-    const float spread = span * cents / 60.0f;
-    g.setColour (edge);
-    g.drawHorizontalLine (area.getBottom() - 2, static_cast<float> (area.getX()),
-                          static_cast<float> (area.getRight()));
+    g.setColour (fill);
+    g.fillRoundedRectangle (box.toFloat(), 12.0f);
+}
+
+void spectrum (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour colour,
+               float detune, float width, float motion)
+{
+    g.setColour (background.withAlpha (0.75f));
+    g.fillRoundedRectangle (area.toFloat(), 8.0f);
+    const auto data = area.reduced (14, 10).toFloat();
+    const auto mid = data.getCentreX();
+    const auto span = data.getWidth() * detune / 130.0f;
+    const auto baseline = data.getBottom() - 10.0f;
+    g.setColour (colour.withAlpha (0.22f));
+    g.drawHorizontalLine (juce::roundToInt (baseline), data.getX(), data.getRight());
     for (int i = -3; i <= 3; ++i)
     {
-        const float x = mid + spread * static_cast<float> (i) / 3.0f;
-        const float height = static_cast<float> (area.getHeight()) * (1.0f - 0.12f * static_cast<float> (std::abs (i)));
-        g.setColour (colour.withAlpha (i == 0 ? 1.0f : 0.62f));
-        g.fillRoundedRectangle (x - 2.0f, static_cast<float> (area.getBottom()) - height,
-                                4.0f, height - 2.0f, 2.0f);
+        const auto pos = static_cast<float> (i) / 3.0f;
+        const auto x = mid + span * pos;
+        const auto h = (data.getHeight() - 16.0f) * (0.92f - std::abs (pos) * motion * 0.31f);
+        g.setColour (colour.withAlpha (1.0f - std::abs (pos) * width * 0.35f));
+        g.fillRoundedRectangle (x - 2.0f, baseline - h, 4.0f, h, 2.0f);
     }
+}
+
+void setParameter (SwarmProcessor& processor, const char* id, float normalized)
+{
+    auto* parameter = processor.parameters.getParameter (id);
+    parameter->beginChangeGesture();
+    parameter->setValueNotifyingHost (normalized);
+    parameter->endChangeGesture();
 }
 }
 
-class SwarmEditor::SwarmLookAndFeel final : public juce::LookAndFeel_V4
+void SwarmEditor::Theme::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                                          float position, float start, float end, juce::Slider& dial)
 {
-public:
-    void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
-                           float sliderPosition, float rotaryStartAngle, float rotaryEndAngle,
-                           juce::Slider& slider) override
-    {
-        const float radius = std::min (width, height) * 0.5f - 11.0f;
-        const auto centre = juce::Point<float> (static_cast<float> (x + width) * 0.5f,
-                                               static_cast<float> (y + height) * 0.5f);
-        juce::Path track;
-        track.addCentredArc (centre.x, centre.y, radius, radius, 0,
-                             rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour (juce::Colour (0xff36394a));
-        g.strokePath (track, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved,
-                                                  juce::PathStrokeType::rounded));
+    const juce::Rectangle<float> bounds (static_cast<float> (x), static_cast<float> (y),
+                                         static_cast<float> (width), static_cast<float> (height));
+    const auto centre = bounds.getCentre();
+    const float radius = std::min (bounds.getWidth(), bounds.getHeight()) * 0.5f - 4.0f;
+    if (radius < 4.0f)
+        return;
 
-        const auto accent = slider.findColour (juce::Slider::rotarySliderFillColourId);
-        juce::Path valueArc;
-        valueArc.addCentredArc (centre.x, centre.y, radius, radius, 0,
-                               rotaryStartAngle,
-                               rotaryStartAngle + sliderPosition * (rotaryEndAngle - rotaryStartAngle), true);
+    const auto accent = dial.findColour (juce::Slider::rotarySliderFillColourId);
+    const float angle = start + position * (end - start);
+    const juce::PathStrokeType stroke (3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    juce::Path track;
+    track.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, start, end, true);
+    g.setColour (background);
+    g.strokePath (track, stroke);
+    if (position > 0.0f)
+    {
+        juce::Path level;
+        level.addCentredArc (centre.x, centre.y, radius, radius, 0.0f, start, angle, true);
         g.setColour (accent);
-        g.strokePath (valueArc, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved,
-                                                     juce::PathStrokeType::rounded));
-        g.setColour (juce::Colour (0xff292b3b));
-        g.fillEllipse (centre.x - radius + 9.0f, centre.y - radius + 9.0f,
-                       radius * 2.0f - 18.0f, radius * 2.0f - 18.0f);
-        g.setColour (juce::Colour (0xff4b4e62));
-        g.drawEllipse (centre.x - radius + 9.0f, centre.y - radius + 9.0f,
-                       radius * 2.0f - 18.0f, radius * 2.0f - 18.0f, 1.0f);
-        const float angle = rotaryStartAngle + sliderPosition * (rotaryEndAngle - rotaryStartAngle);
-        const auto tip = centre.getPointOnCircumference (radius - 17.0f, angle);
-        g.setColour (accent);
-        g.drawLine (centre.x, centre.y, tip.x, tip.y, 2.6f);
-        g.fillEllipse (centre.x - 2.5f, centre.y - 2.5f, 5.0f, 5.0f);
+        g.strokePath (level, stroke);
     }
-};
 
-class SwarmEditor::Knob final : public juce::Component
+    const auto face = bounds.withSizeKeepingCentre (radius * 1.5f, radius * 1.5f);
+    g.setColour (background.brighter (0.16f));
+    g.fillEllipse (face);
+    g.setColour (ink.withAlpha (0.18f));
+    g.drawEllipse (face, 1.0f);
+    g.setColour (accent);
+    g.drawLine ({centre.getPointOnCircumference (radius * 0.39f, angle),
+                 centre.getPointOnCircumference (radius * 0.64f, angle)}, 2.7f);
+}
+
+class SwarmEditor::Control final : public juce::Component
 {
 public:
-    Knob (SwarmLookAndFeel& theme, juce::AudioProcessorValueTreeState& state,
-          const juce::String& id, const juce::String& label, juce::Colour colour)
+    Control (SwarmProcessor& processor, const char* id, const juce::String& name, juce::Colour colour)
+        : key (id)
     {
-        title.setText (label, juce::dontSendNotification);
-        title.setJustificationType (juce::Justification::centred);
-        title.setColour (juce::Label::textColourId, muted);
-        title.setFont (juce::Font (juce::FontOptions (12.0f)));
-        addAndMakeVisible (title);
-        slider.setLookAndFeel (&theme);
-        slider.setComponentID (id);
+        label.setText (name, juce::dontSendNotification);
+        label.setJustificationType (juce::Justification::centred);
+        label.setColour (juce::Label::textColourId, ink);
+        addAndMakeVisible (label);
+
+        slider.setComponentID (key);
+        slider.setTitle (name);
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 19);
+        slider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
         slider.setColour (juce::Slider::rotarySliderFillColourId, colour);
-        slider.setColour (juce::Slider::textBoxTextColourId, white);
-        slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
-        slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        slider.setPopupDisplayEnabled (true, true, this);
+        slider.setColour (juce::Slider::rotarySliderOutlineColourId, background);
+        slider.setColour (juce::Slider::thumbColourId, ink);
         addAndMakeVisible (slider);
-        attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (state, id, slider);
-        const auto formatter = [id] (double value)
-        {
-            if (id.startsWith ("detune")) return juce::String (value, 1) + " ct";
-            if (id == "cutoff") return value < 1000.0 ? juce::String (value, 0) + " Hz"
-                                                        : juce::String (value / 1000.0, 2) + " kHz";
-            if (id == "attack" || id == "release") return juce::String (value * 1000.0, 0) + " ms";
-            return juce::String (value * 100.0, 0) + "%";
-        };
-        slider.textFromValueFunction = formatter;
-        slider.valueFromTextFunction = [id] (const juce::String& text)
-        {
-            const auto value = text.getDoubleValue();
-            if (id.startsWith ("detune")) return value;
-            if (id == "cutoff") return text.containsIgnoreCase ("kHz") ? value * 1000.0 : value;
-            if (id == "attack" || id == "release") return value / 1000.0;
-            return value / 100.0;
-        };
-        slider.updateText();
+        attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+            processor.parameters, key, slider);
+        addAndMakeVisible (readout);
+        readout.setJustificationType (juce::Justification::centred);
+        readout.setColour (juce::Label::textColourId, subdued);
+        readout.setInterceptsMouseClicks (false, false);
     }
-    ~Knob() override { attachment.reset(); slider.setLookAndFeel (nullptr); }
+
+    void update (bool sceneMode, float effective)
+    {
+        slider.setEnabled (! sceneMode);
+        slider.setVisible (! sceneMode);
+        const auto value = sceneMode ? static_cast<double> (effective) : slider.getValue();
+        juce::String formatted;
+        if (key.startsWith ("detune"))
+            formatted = juce::String (value, 1) + " ct";
+        else if (key == "cutoff")
+            formatted = value < 1000.0 ? juce::String (value, 0) + " Hz"
+                                       : juce::String (value / 1000.0, 2) + " kHz";
+        else if (key == "attack" || key == "release")
+            formatted = juce::String (value * 1000.0, 0) + " ms";
+        else
+            formatted = juce::String (value * 100.0, 0) + " %";
+        readout.setText (formatted, juce::dontSendNotification);
+    }
+
     void resized() override
     {
-        auto r = getLocalBounds();
-        title.setBounds (r.removeFromTop (18));
-        slider.setBounds (getLocalBounds().withTrimmedTop (18));
+        auto box = getLocalBounds();
+        label.setBounds (box.removeFromTop (24));
+        readout.setBounds (box.removeFromBottom (20));
+        slider.setBounds (box.reduced (8, 0));
     }
+
 private:
+    juce::String key;
+    juce::Label label, readout;
     juce::Slider slider;
-    juce::Label title;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
 };
 
-class SwarmEditor::MorphPad final : public juce::Component, private juce::Timer
+class SwarmEditor::MorphPad final : public juce::Component
 {
 public:
-    explicit MorphPad (juce::AudioProcessorValueTreeState& state)
-      : x (state.getParameter ("morphX")), y (state.getParameter ("morphY")),
-        enabled (state.getParameter ("morphOn"))
+    explicit MorphPad (SwarmProcessor& p) : processor (p)
     {
         setMouseCursor (juce::MouseCursor::CrosshairCursor);
-        startTimerHz (30);
+        setTitle ("Morph X/Y");
     }
 
     void paint (juce::Graphics& g) override
     {
-        const auto area = getPadArea();
-        juce::ColourGradient gradient (pink.withAlpha (0.33f), area.getX(), area.getY(),
-                                       lime.withAlpha (0.29f), area.getRight(), area.getBottom(), false);
-        gradient.addColour (0.51, juce::Colour (0xff353850));
+        const auto box = getLocalBounds().toFloat();
+        juce::ColourGradient gradient (pink.darker (0.9f), box.getTopLeft(),
+                                       lime.darker (1.35f), box.getBottomRight(), false);
         g.setGradientFill (gradient);
-        g.fillRoundedRectangle (area, 11.0f);
-        g.setColour (juce::Colour (0xff555b73));
-        g.drawRoundedRectangle (area, 11.0f, 1.0f);
-        g.setColour (white.withAlpha (0.14f));
-        g.drawVerticalLine (juce::roundToInt (area.getCentreX()), area.getY() + 3, area.getBottom() - 3);
-        g.drawHorizontalLine (juce::roundToInt (area.getCentreY()), area.getX() + 3, area.getRight() - 3);
-
-        constexpr const char* labels[] = {"1", "2", "3", "4"};
+        g.fillRoundedRectangle (box, 9.0f);
+        const auto plot = area();
+        g.setColour (ink.withAlpha (0.5f));
+        g.drawRect (plot, 1.0f);
+        g.drawHorizontalLine (juce::roundToInt (plot.getCentreY()), plot.getX(), plot.getRight());
+        g.drawVerticalLine (juce::roundToInt (plot.getCentreX()), plot.getY(), plot.getBottom());
+        const auto px = plot.getX() + x()->getValue() * plot.getWidth();
+        const auto py = plot.getY() + y()->getValue() * plot.getHeight();
+        g.setColour (isEnabled() ? ink : subdued);
+        g.fillEllipse (px - 6.0f, py - 6.0f, 12.0f, 12.0f);
+        constexpr const char* names[] { "A", "B", "C", "D" };
         for (int i = 0; i < 4; ++i)
         {
-            const bool right = (i % 2) == 1;
-            const bool bottom = i >= 2;
-            const float px = right ? area.getRight() - 20.0f : area.getX() + 20.0f;
-            const float py = bottom ? area.getBottom() - 20.0f : area.getY() + 20.0f;
-            g.setColour (juce::Colour (0xff292a3a));
-            g.fillEllipse (px - 12.0f, py - 12.0f, 24.0f, 24.0f);
-            g.setColour (i == 0 || i == 2 ? pink : lime);
-            g.drawEllipse (px - 12.0f, py - 12.0f, 24.0f, 24.0f, 1.3f);
-            g.setColour (white);
-            g.setFont (juce::Font (juce::FontOptions (12.0f).withStyle ("Bold")));
-            g.drawText (labels[i], juce::Rectangle<float> (px - 11, py - 11, 22, 22), juce::Justification::centred);
+            const auto vx = (i % 2 == 0) ? plot.getX() : plot.getRight();
+            const auto vy = (i < 2) ? plot.getY() : plot.getBottom();
+            text (g, names[i], {juce::roundToInt (vx) - 6, juce::roundToInt (vy) - 9, 18, 18},
+                  11.0f, ink, true);
         }
-
-        const float px = area.getX() + x->getValue() * area.getWidth();
-        const float py = area.getY() + y->getValue() * area.getHeight();
-        const juce::Colour active = enabled->getValue() > 0.5f ? white : muted;
-        g.setColour (active.withAlpha (0.16f));
-        g.fillEllipse (px - 22, py - 22, 44, 44);
-        g.setColour (active);
-        g.drawEllipse (px - 12, py - 12, 24, 24, 2.1f);
-        g.setColour (juce::Colour (0xff171820));
-        g.fillEllipse (px - 6, py - 6, 12, 12);
-        g.setColour (active);
-        g.fillEllipse (px - 3, py - 3, 6, 6);
     }
 
     void mouseDown (const juce::MouseEvent& e) override
     {
-        x->beginChangeGesture();
-        y->beginChangeGesture();
-        setPosition (e.position);
+        x()->beginChangeGesture();
+        y()->beginChangeGesture();
+        move (e.position);
     }
-    void mouseDrag (const juce::MouseEvent& e) override { setPosition (e.position); }
+
+    void mouseDrag (const juce::MouseEvent& e) override { move (e.position); }
     void mouseUp (const juce::MouseEvent&) override
     {
-        x->endChangeGesture();
-        y->endChangeGesture();
+        x()->endChangeGesture();
+        y()->endChangeGesture();
     }
+
 private:
-    juce::RangedAudioParameter* x;
-    juce::RangedAudioParameter* y;
-    juce::RangedAudioParameter* enabled;
-    juce::Rectangle<float> getPadArea() const { return getLocalBounds().toFloat().reduced (19.0f, 14.0f); }
-    void setPosition (juce::Point<float> pos)
+    SwarmProcessor& processor;
+    juce::Rectangle<float> area() const { return getLocalBounds().toFloat().reduced (14.0f); }
+    juce::RangedAudioParameter* x() const { return processor.parameters.getParameter ("morphX"); }
+    juce::RangedAudioParameter* y() const { return processor.parameters.getParameter ("morphY"); }
+    void move (juce::Point<float> point)
     {
-        const auto bounds = getPadArea();
-        const float nx = juce::jlimit (0.0f, 1.0f, (pos.x - bounds.getX()) / bounds.getWidth());
-        const float ny = juce::jlimit (0.0f, 1.0f, (pos.y - bounds.getY()) / bounds.getHeight());
-        x->setValueNotifyingHost (x->convertTo0to1 (nx));
-        y->setValueNotifyingHost (y->convertTo0to1 (ny));
+        const auto bounds = area();
+        if (bounds.isEmpty())
+            return;
+        x()->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, (point.x - bounds.getX()) / bounds.getWidth()));
+        y()->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, (point.y - bounds.getY()) / bounds.getHeight()));
         repaint();
     }
-    void timerCallback() override { repaint(); }
 };
 
-SwarmEditor::SwarmEditor (SwarmProcessor& p)
-  : juce::AudioProcessorEditor (&p), processor (p), theme (std::make_unique<SwarmLookAndFeel>())
+SwarmEditor::SwarmEditor (SwarmProcessor& p) : juce::AudioProcessorEditor (&p), processor (p)
 {
-    struct Definition { const char* id; const char* name; juce::Colour colour; };
-    const std::array<Definition, 13> defs {{
-        {"detuneA", "DETUNE", pink}, {"widthA", "SPREAD", pink}, {"motionA", "MOTION", pink},
-        {"detuneB", "DETUNE", lime}, {"widthB", "SPREAD", lime}, {"motionB", "MOTION", lime},
-        {"mix", "MIX A / B", blue}, {"cutoff", "CUTOFF", blue}, {"resonance", "RESONANCE", blue},
-        {"drive", "DRIVE", blue}, {"attack", "ATTACK", blue}, {"release", "RELEASE", blue},
-        {"output", "OUTPUT", blue}
-    }};
-    for (const auto& definition : defs)
+    theme.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff3d3955));
+    theme.setColour (juce::TextButton::textColourOffId, ink);
+    theme.setColour (juce::ToggleButton::textColourId, ink);
+    theme.setColour (juce::ToggleButton::tickColourId, lime);
+    setLookAndFeel (&theme);
+
+    const char* ids[] { "detuneA", "widthA", "motionA", "detuneB", "widthB", "motionB",
+                        "mix", "cutoff", "resonance", "drive", "attack", "release", "output" };
+    const char* names[] { "Detune", "Largeur", "Mouvement", "Detune", "Largeur", "Mouvement",
+                          "Mix A/B", "Cutoff", "Résonance", "Drive", "Attaque", "Relâchement", "Sortie" };
+    for (size_t i = 0; i < controls.size(); ++i)
     {
-        auto knob = std::make_unique<Knob> (*theme, processor.parameters,
-                                           definition.id, definition.name, definition.colour);
-        addAndMakeVisible (*knob);
-        knobs.push_back (std::move (knob));
+        controls[i] = std::make_unique<Control> (p, ids[i], juce::String::fromUTF8 (names[i]),
+                                                 i < 3 ? pink : (i < 6 ? lime : lilac));
+        addAndMakeVisible (*controls[i]);
     }
 
-    pad = std::make_unique<MorphPad> (processor.parameters);
+    pad = std::make_unique<MorphPad> (p);
     addAndMakeVisible (*pad);
-    for (int i = 0; i < 4; ++i)
+    for (size_t i = 0; i < recallButtons.size(); ++i)
     {
-        auto& b = captureButtons[static_cast<size_t> (i)];
-        b.setButtonText ("Save " + juce::String (i + 1));
-        b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff36394d));
-        b.setColour (juce::TextButton::textColourOffId, white);
-        b.onClick = [this, i]
-        {
-            processor.captureScene (i);
-            status.setText ("Scene " + juce::String (i + 1) + " saved",
-                            juce::dontSendNotification);
-        };
-        addAndMakeVisible (b);
+        const juce::String letter = juce::String::charToString (static_cast<juce::juce_wchar> ('A' + i));
+        auto& recall = recallButtons[i];
+        recall.setButtonText (letter);
+        recall.setTooltip ("Rappeler la scène " + letter + " en mode LIVE");
+        recall.onClick = [this, i] { processor.recallScene (static_cast<int> (i)); };
+        addAndMakeVisible (recall);
+        auto& save = saveButtons[i];
+        save.setButtonText ("CAP " + letter);
+        save.onClick = [this, i] { processor.captureScene (static_cast<int> (i)); };
+        addAndMakeVisible (save);
     }
-    morphToggle.setButtonText ("Enable morph");
-    morphToggle.setClickingTogglesState (true);
-    morphToggle.setColour (juce::ToggleButton::textColourId, white);
-    morphToggle.setColour (juce::ToggleButton::tickColourId, lime);
-    addAndMakeVisible (morphToggle);
-    morphAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
-        (processor.parameters, "morphOn", morphToggle);
-    status.setJustificationType (juce::Justification::centred);
-    status.setColour (juce::Label::textColourId, muted);
-    status.setFont (juce::Font (juce::FontOptions (12.0f)));
-    addAndMakeVisible (status);
 
-    auto* mix = processor.parameters.getParameter ("mix");
-    listenA.onClick = [mix]
-    {
-        mix->beginChangeGesture();
-        mix->setValueNotifyingHost (0.0f);
-        mix->endChangeGesture();
-    };
-    listenB.onClick = [mix]
-    {
-        mix->beginChangeGesture();
-        mix->setValueNotifyingHost (1.0f);
-        mix->endChangeGesture();
-    };
-    addAndMakeVisible (listenA);
-    addAndMakeVisible (listenB);
+    addAndMakeVisible (morph);
+    morphAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        p.parameters, "morphOn", morph);
+    modeLabel.setColour (juce::Label::textColourId, subdued);
+    addAndMakeVisible (modeLabel);
 
-    if (processor.wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+    hearA.onClick = [this] { setParameter (processor, "mix", 0.0f); };
+    hearB.onClick = [this] { setParameter (processor, "mix", 1.0f); };
+    addAndMakeVisible (hearA);
+    addAndMakeVisible (hearB);
+
+    if (p.wrapperType == juce::AudioProcessor::wrapperType_Standalone)
     {
         keyboard = std::make_unique<juce::MidiKeyboardComponent> (
-            processor.auditionKeyboard, juce::MidiKeyboardComponent::horizontalKeyboard);
+            p.auditionKeyboard, juce::MidiKeyboardComponent::horizontalKeyboard);
         keyboard->setAvailableRange (48, 83);
         keyboard->setLowestVisibleKey (48);
-        keyboard->setWantsKeyboardFocus (true);
         addAndMakeVisible (*keyboard);
+        audition.onStateChange = [this] { processor.setAuditionChord (audition.isDown()); };
+        addAndMakeVisible (audition);
     }
 
     setResizable (true, true);
-    setResizeLimits (870, keyboard != nullptr ? 575 : 515, 1480, 850);
-    setSize (1000, keyboard != nullptr ? 640 : 580);
+    setResizeLimits (920, keyboard ? 638 : 560, 1480, 900);
+    setSize (1060, keyboard ? 680 : 602);
     timerCallback();
     startTimerHz (24);
 }
@@ -301,95 +281,104 @@ SwarmEditor::SwarmEditor (SwarmProcessor& p)
 SwarmEditor::~SwarmEditor()
 {
     stopTimer();
-    morphAttachment.reset();
-    pad.reset();
-    knobs.clear();
+    if (keyboard != nullptr)
+        processor.setAuditionChord (false);
+    setLookAndFeel (nullptr);
 }
 
 void SwarmEditor::timerCallback()
 {
-    const bool enabled = processor.parameters.getRawParameterValue ("morphOn")->load() >= 0.5f;
-    if (displayedMorphMode != enabled)
-    {
-        displayedMorphMode = enabled;
-        status.setText (enabled ? "Scenes shape the live controls"
-                                : "Live controls active",
-                        juce::dontSendNotification);
-    }
+    viewingMorph = processor.parameters.getRawParameterValue ("morphOn")->load() >= 0.5f;
+    const auto p = processor.getEffectivePatch();
+    const std::array<float, 13> values {p.detuneA, p.widthA, p.motionA, p.detuneB, p.widthB, p.motionB,
+                                      p.mix, p.cutoff, p.resonance, p.drive, p.attack, p.release, p.output};
+    for (size_t i = 0; i < controls.size(); ++i)
+        controls[i]->update (viewingMorph, values[i]);
+    for (auto& save : saveButtons)
+        save.setEnabled (! viewingMorph);
+    hearA.setEnabled (! viewingMorph);
+    hearB.setEnabled (! viewingMorph);
+    // Let JUCE deliver mouse-up to close an in-progress XY gesture.
+    if (! pad->isMouseButtonDown())
+        pad->setEnabled (viewingMorph);
+    modeLabel.setText (viewingMorph ? "MORPH / A-D pour modifier" : "LIVE / commandes directes",
+                       juce::dontSendNotification);
     repaint();
 }
 
 void SwarmEditor::paint (juce::Graphics& g)
 {
     g.fillAll (background);
-    g.setColour (white);
-    g.setFont (juce::Font (juce::FontOptions (32.0f).withStyle ("Bold")));
-    g.drawText ("SWARM / 01", 18, 9, 280, 45, juce::Justification::centredLeft);
+    text (g, "SWARM / 01", header.withWidth (260), 35.0f, ink, true);
+    text (g, "ANKS LABS", header.withTrimmedLeft (260).withWidth (120), 13.0f, subdued, true);
 
-    drawPanel (g, leftPanel, pink);
-    drawPanel (g, rightPanel, lime);
-    drawPanel (g, morphPanel, blue);
-    drawPanel (g, bottomPanel, blue);
+    auto meter = header.withLeft (header.getRight() - 115).withSizeKeepingCentre (115, 10);
+    tile (g, meter, panel);
+    const auto level = std::sqrt (juce::jlimit (0.0f, 1.0f, processor.getOutputPeak()));
+    tile (g, meter.withWidth (juce::roundToInt (115.0f * level)), lime);
 
-    const auto drawTitle = [&g] (const char* title, juce::Rectangle<int> bounds, juce::Colour colour)
-    {
-        g.setColour (colour);
-        g.setFont (juce::Font (juce::FontOptions (17.0f).withStyle ("Bold")));
-        g.drawText (title, bounds, juce::Justification::centredLeft);
-    };
-    drawTitle ("SWARM A", leftPanel.reduced (16, 9).removeFromTop (31), pink);
-    drawTitle ("SWARM B", rightPanel.reduced (16, 9).removeFromTop (31), lime);
-    drawTitle ("SCENE MORPH", morphPanel.reduced (16, 9).removeFromTop (31), blue);
-    drawTitle ("MIX / FILTER / AMP", bottomPanel.reduced (16, 5).removeFromTop (24), white);
+    tile (g, bankA, juce::Colour (0xff512c51));
+    tile (g, bankB, juce::Colour (0xff34432c));
+    tile (g, morphPanel, panel);
+    tile (g, master, panel);
+    text (g, "SWARM A", bankA.reduced (16, 12).withHeight (32), 23.0f, pink, true);
+    text (g, "SWARM B", bankB.reduced (16, 12).withHeight (32), 23.0f, lime, true);
+    text (g, "MORPHER", morphPanel.reduced (14, 10).withHeight (28), 18.0f, lilac, true);
+    text (g, "MIX     /     FILTRE     /     AMPLITUDE", master.reduced (14, 7).withHeight (24),
+          14.0f, lilac, true);
 
-    drawDetune (g, leftPanel.reduced (24, 0).withTrimmedTop (62).withHeight (75),
-                pink, processor.parameters.getRawParameterValue ("detuneA")->load());
-    drawDetune (g, rightPanel.reduced (24, 0).withTrimmedTop (62).withHeight (75),
-                lime, processor.parameters.getRawParameterValue ("detuneB")->load());
+    const auto p = processor.getEffectivePatch();
+    spectrum (g, bankA.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (118),
+              pink, p.detuneA, p.widthA, p.motionA);
+    spectrum (g, bankB.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (118),
+              lime, p.detuneB, p.widthB, p.motionB);
 }
 
 void SwarmEditor::resized()
 {
-    auto bounds = getLocalBounds().reduced (16, 10);
-    bounds.removeFromTop (50);
+    auto layout = getLocalBounds().reduced (16, 12);
+    header = layout.removeFromTop (57);
     if (keyboard != nullptr)
     {
-        auto keys = bounds.removeFromBottom (56);
+        keyboardRow = layout.removeFromBottom (65);
+        auto keys = keyboardRow;
+        audition.setBounds (keys.removeFromLeft (135).reduced (0, 12));
+        keys.removeFromLeft (12);
         keyboard->setKeyWidth (static_cast<float> (keys.getWidth()) / 21.0f);
         keyboard->setBounds (keys);
-        bounds.removeFromBottom (10);
+        layout.removeFromBottom (10);
     }
-    bottomPanel = bounds.removeFromBottom (126);
-    bounds.removeFromBottom (10);
-    const int gap = 10;
-    const int centreWidth = bounds.getWidth() * 34 / 100;
-    const int leftWidth = (bounds.getWidth() - centreWidth - 2 * gap) / 2;
-    leftPanel = bounds.removeFromLeft (leftWidth);
-    bounds.removeFromLeft (gap);
-    morphPanel = bounds.removeFromLeft (centreWidth);
-    bounds.removeFromLeft (gap);
-    rightPanel = bounds;
+    master = layout.removeFromBottom (126);
+    layout.removeFromBottom (10);
 
-    listenA.setBounds (leftPanel.getRight() - 81, leftPanel.getY() + 14, 66, 26);
-    listenB.setBounds (rightPanel.getRight() - 81, rightPanel.getY() + 14, 66, 26);
-    const auto layoutKnobs = [this] (juce::Rectangle<int> row, int first, int count)
+    const int middleWidth = layout.getWidth() * 31 / 100;
+    bankA = layout.removeFromLeft ((layout.getWidth() - middleWidth - 20) / 2);
+    layout.removeFromLeft (10);
+    morphPanel = layout.removeFromLeft (middleWidth);
+    layout.removeFromLeft (10);
+    bankB = layout;
+    hearA.setBounds (bankA.getRight() - 72, bankA.getY() + 15, 56, 24);
+    hearB.setBounds (bankB.getRight() - 72, bankB.getY() + 15, 56, 24);
+
+    const auto row = [this] (juce::Rectangle<int> box, size_t first, size_t count)
     {
-        for (int i = 0; i < count; ++i)
-            knobs[static_cast<size_t> (first + i)]->setBounds (row.removeFromLeft (row.getWidth() / (count - i)));
+        for (size_t i = 0; i < count; ++i)
+            controls[first + i]->setBounds (box.removeFromLeft (box.getWidth() / static_cast<int> (count - i)));
     };
-    layoutKnobs (leftPanel.reduced (12, 8).removeFromBottom (104), 0, 3);
-    layoutKnobs (rightPanel.reduced (12, 8).removeFromBottom (104), 3, 3);
-    layoutKnobs (bottomPanel.reduced (10, 5).removeFromBottom (94), 6, 7);
+    row (bankA.reduced (10, 5).removeFromBottom (108), 0, 3);
+    row (bankB.reduced (10, 5).removeFromBottom (108), 3, 3);
+    row (master.reduced (10, 4).removeFromBottom (90), 6, 7);
 
-    auto morph = morphPanel.reduced (14, 8);
-    morph.removeFromTop (32);
-    status.setBounds (morph.removeFromBottom (18));
-    morphToggle.setBounds (morph.removeFromBottom (26).withSizeKeepingCentre (130, 26));
-    auto captures = morph.removeFromBottom (29);
-    for (auto& button : captureButtons)
+    auto m = morphPanel.reduced (13, 8);
+    morph.setBounds (m.removeFromTop (31).removeFromRight (90));
+    modeLabel.setBounds (m.removeFromBottom (25));
+    auto saves = m.removeFromBottom (27);
+    auto recalls = m.removeFromBottom (27);
+    for (size_t i = 0; i < recallButtons.size(); ++i)
     {
-        const int remaining = static_cast<int> (captureButtons.data() + captureButtons.size() - &button);
-        button.setBounds (captures.removeFromLeft (captures.getWidth() / remaining).reduced (2, 1));
+        const auto remaining = static_cast<int> (recallButtons.size() - i);
+        recallButtons[i].setBounds (recalls.removeFromLeft (recalls.getWidth() / remaining).reduced (2, 2));
+        saveButtons[i].setBounds (saves.removeFromLeft (saves.getWidth() / remaining).reduced (2, 2));
     }
-    pad->setBounds (morph);
+    pad->setBounds (m.reduced (2, 5));
 }

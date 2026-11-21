@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(ANKS_Swarm_01 VERSION 0.2.0 LANGUAGES C CXX)
+project(ANKS_Swarm_01 VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,6 +43,10 @@ target_sources(ANKS_Swarm_01 PRIVATE
     Source/PluginEditor.cpp
     Source/DSP/SwarmEngine.h
 )
+
+if (MSVC)
+    target_compile_options(ANKS_Swarm_01 PRIVATE /utf-8)
+endif()
 
 target_compile_definitions(ANKS_Swarm_01 PUBLIC
     JUCE_WEB_BROWSER=0

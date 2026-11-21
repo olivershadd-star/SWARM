@@ -1,6 +1,6 @@
 # SWARM / 01 — dossier technique / passation Codex
 
-Date : 20 novembre 2026. Version : 0.1 (prototype de travail).
+Date : 20 novembre 2026. Version : 0.3 (reconstruction).
 
 ## Intention artistique
 
@@ -61,7 +61,7 @@ A=(1-x)(1-y), B=x(1-y), C=(1-x)y, D=xy
 - X/Y sont exposés comme paramètres VST3 automatisables.
 - Le moteur applique un lissage de 12 ms à chaque paramètre pour éviter les clics.
 - En v0.1, les scènes capturent les 13 commandes sonores mais pas l'état des 16 paramètres APVTS lui-même (MORPH X/Y et ON/OFF sont indépendants).
-- En v0.2, les molettes pilotent le son dans les deux modes. En mode MORPH, les scènes déplacent la réponse autour de la valeur d’usine. Les deux extrémités de chaque plage restent accessibles, et Output reste indépendant. Le pad ne bascule pas le mode de lui-même.
+- En LIVE, les molettes pilotent directement le moteur. En MORPH, les scènes calculent la cible audio et l’éditeur affiche les valeurs interpolées. Un rappel A–D recharge la scène en LIVE pour l’édition. Un compteur de génération par scène permet au thread audio de rejeter une capture partielle et de réutiliser la dernière scène complète.
 
 ## Real-time safety
 

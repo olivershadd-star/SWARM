@@ -1,8 +1,10 @@
-# ANKS LABS — SWARM / 01 (prototype v0.2)
+# ANKS LABS — SWARM / 01 (reconstruction v0.3)
 
 Un **synthétiseur original** à deux essaims de dents de scie et morphing XY. Son esthétique graphique se rapproche volontairement de la philosophie colorée, expressive et immédiate de Native Instruments Super*Saw, **sans reprendre son interface exacte, sa marque ou son code propriétaire**.
 
-**Statut :** moteur DSP implémenté et validé par test audio hors JUCE. **Projet JUCE VST3 / standalone préparé mais compilation Windows non encore vérifiée sur la machine cible.**
+**Statut.** Cette version reprend la passation ANKS Labs. Le projet cible
+Windows x64 en VST3 et en standalone portable. Le chargement dans Ableton Live
+doit être vérifié sur la machine cible.
 
 ## Fonctionnalités présentes dans le code
 
@@ -69,11 +71,18 @@ Puis lancer un nouveau scan des plugins VST3 dans Ableton Live. Avec Live Lite, 
 
 ## Utilisation rapide
 
-1. Dans le standalone, cliquer sur le clavier intégré. Dans Ableton, déposer le VST3 sur une piste MIDI et jouer ou lancer un clip.
-2. **Hear A** et **Hear B** déplacent le mix à une extrémité pour écouter une banque seule. Le mix reste ajustable.
-3. Régler les molettes, puis cliquer sur **Save 1–4** pour mémoriser les réglages dans un coin.
-4. Cocher **Enable morph**, puis déplacer le point entre les quatre coins. Les scènes modulent la réponse des molettes autour de leur position d’usine. Les valeurs min/max restent disponibles, et le bouton Output reste un niveau maître indépendant.
-5. Enregistrer le projet Ableton pour conserver les réglages, le mode et les quatre scènes.
+1. **Standalone** — choisissez une sortie audio dans les options. Cliquez sur
+   le clavier ou maintenez **Jouer un accord** pendant que vous tournez une molette.
+   **Ableton** — placez SWARM sur une piste MIDI et lancez un clip.
+2. **LIVE** — les molettes pilotent directement le signal. **A seul** et
+   **B seul** amènent le mix à son extrémité correspondante pour isoler une banque.
+   Les barres colorées représentent la distribution du désaccordage.
+3. **CAP A–D** mémorise le patch LIVE. Les boutons A–D le rappellent en LIVE
+   pour le jouer, le modifier ou le sauvegarder de nouveau.
+4. **MORPH** active le pad XY. Les quatre coins correspondent aux quatre scènes
+   et les valeurs affichées suivent leur interpolation. Cliquez sur A–D pour
+   rappeler et éditer une scène, ou décochez MORPH pour retrouver le patch LIVE.
+5. Enregistrez le projet Ableton pour conserver les paramètres et les scènes.
 
 ## Test sans JUCE (réalisé)
 
@@ -114,4 +123,4 @@ CMakeLists.txt                configuration CMake/JUCE
 - Nombre d'oscillateurs fixe à 7 par banc pour contenir la charge CPU.
 - Pas de comparaison sonore A/B avec Super*Saw ; l'instrument n'est pas annoncé comme une reproduction à l'identique.
 - Pas encore de mesure d'aliasing, de profiler CPU ni de test d'automatisation à l'échantillon près dans un DAW.
-- Les captures de scène depuis l'éditeur sont atomiques par paramètre, pas transactionnelles entre tous les champs : une capture simultanée avec le traitement audio peut momentanément mélanger ancienne/nouvelle scène sur un bloc. À renforcer avant version publique.
+- Le thread audio conserve la scène précédente si une capture coïncide avec sa lecture.
