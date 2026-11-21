@@ -70,6 +70,11 @@ bool checkControl (const char* id)
     if (name.endsWith ("A") || name.endsWith ("B"))
         setParameter (processor, "mix", name.endsWith ("A") ? 0.0f : 1.0f);
 
+    if (name == "lfoRate")
+        setParameter (processor, "lfoDepth", 0.85f);
+    if (name == "delayTime" || name == "delayFeedback")
+        setParameter (processor, "delayMix", 0.65f);
+
     slider->setValue (slider->getMinimum(), juce::sendNotificationSync);
     const auto lowParam = processor.parameters.getRawParameterValue (id)->load();
     const auto low = render (processor);
@@ -91,7 +96,9 @@ int main()
     const juce::ScopedJuceInitialiser_GUI juce;
     bool passed = true;
     for (const auto* id : {"detuneA", "widthA", "motionA", "detuneB", "widthB", "motionB",
-                           "mix", "cutoff", "resonance", "drive", "attack", "release", "output"})
+                           "mix", "cutoff", "resonance", "drive", "attack", "release", "output",
+                           "tuneA", "densityA", "shapeA", "tuneB", "densityB", "shapeB",
+                           "lfoRate", "lfoDepth", "delayMix", "delayTime", "delayFeedback"})
     {
         passed = checkControl (id) && passed;
     }
@@ -108,10 +115,25 @@ int main()
     passed = passed && morph.parameters.getRawParameterValue ("morphOn")->load() < 0.5f
              && std::abs (morph.getEffectivePatch().cutoff - scene.cutoff) < 0.1f;
     juce::MemoryBlock state;
+    setParameter (morph, "delayMix", 0.5f);
+    morph.captureScene (2);
     morph.getStateInformation (state);
     SwarmProcessor reopened;
     reopened.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
-    passed = passed && std::abs (reopened.getEffectivePatch().cutoff - scene.cutoff) < 0.1f;
+    passed = passed && std::abs (reopened.getEffectivePatch().cutoff - scene.cutoff) < 0.1f
+             && std::abs (reopened.getScene (2).delayMix - 0.5f) < 0.001f;
+
+    const auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), static_cast<int> (state.getSize()));
+    auto oldState = juce::ValueTree::fromXml (*xml);
+    oldState.removeChild (oldState.getChildWithProperty ("id", "delayMix"), nullptr);
+    for (auto sceneNode : oldState.getChildWithName ("SwarmScenes"))
+        sceneNode.removeProperty ("p21", nullptr);
+    juce::MemoryBlock oldBinary;
+    const auto oldXml = oldState.createXml();
+    juce::AudioProcessor::copyXmlToBinary (*oldXml, oldBinary);
+    reopened.setStateInformation (oldBinary.getData(), static_cast<int> (oldBinary.getSize()));
+    passed = passed && reopened.getEffectivePatch().delayMix < 0.001f
+             && reopened.getScene (2).delayMix < 0.001f;
 
     juce::AudioProcessor::setTypeOfNextNewPlugin (juce::AudioProcessor::wrapperType_Standalone);
     SwarmProcessor standalone;

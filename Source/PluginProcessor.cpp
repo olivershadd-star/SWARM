@@ -4,15 +4,20 @@
 namespace
 {
 using Patch = anks::Patch;
-constexpr std::array<const char*, 13> patchIds {
+constexpr size_t originalPatchFieldCount = 13;
+constexpr std::array<const char*, 24> patchIds {
     "detuneA", "widthA", "motionA", "detuneB", "widthB", "motionB",
-    "mix", "cutoff", "resonance", "drive", "attack", "release", "output"
+    "mix", "cutoff", "resonance", "drive", "attack", "release", "output",
+    "tuneA", "densityA", "shapeA", "tuneB", "densityB", "shapeB",
+    "lfoRate", "lfoDepth", "delayMix", "delayTime", "delayFeedback"
 };
 constexpr std::array<float Patch::*, patchIds.size()> patchFields {
     &Patch::detuneA, &Patch::widthA, &Patch::motionA,
     &Patch::detuneB, &Patch::widthB, &Patch::motionB,
     &Patch::mix, &Patch::cutoff, &Patch::resonance,
-    &Patch::drive, &Patch::attack, &Patch::release, &Patch::output
+    &Patch::drive, &Patch::attack, &Patch::release, &Patch::output,
+    &Patch::tuneA, &Patch::densityA, &Patch::shapeA, &Patch::tuneB, &Patch::densityB, &Patch::shapeB,
+    &Patch::lfoRate, &Patch::lfoDepth, &Patch::delayMix, &Patch::delayTime, &Patch::delayFeedback
 };
 
 std::array<Patch, 4> factoryScenes()
@@ -37,6 +42,15 @@ std::array<Patch, 4> factoryScenes()
     p[1].mix = 0.55f;
     p[2].mix = 0.72f; p[2].attack = 0.35f; p[2].release = 1.5f;
     p[3].mix = 0.63f; p[3].resonance = 0.48f;
+
+    p[0].densityA = 3.0f; p[0].densityB = 1.0f;
+    p[0].tuneB = -12.0f; p[0].shapeB = 0.24f;
+    p[1].tuneB = 12.0f; p[1].delayMix = 0.21f;
+    p[2].shapeA = 0.56f; p[2].shapeB = 0.73f;
+    p[2].lfoDepth = 0.52f; p[2].lfoRate = 0.33f; p[2].delayMix = 0.30f;
+    p[2].delayTime = 0.44f; p[2].delayFeedback = 0.53f;
+    p[3].shapeA = 0.9f; p[3].shapeB = 0.36f; p[3].densityB = 4.0f;
+    p[3].lfoRate = 4.2f; p[3].lfoDepth = 0.64f; p[3].delayMix = 0.36f;
     return p;
 }
 }
@@ -94,6 +108,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout SwarmProcessor::makeParamete
     add ("morphX",   "Morph X",     0.0f, 1.0f,  0.5f);
     add ("morphY",   "Morph Y",     0.0f, 1.0f,  0.5f);
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID {"morphOn", 1}, "Morph Enable", false));
+    add ("tuneA", "A / Tune", -12.0f, 12.0f, 0.0f);
+    add ("densityA", "A / Density", 1.0f, 7.0f, 7.0f);
+    add ("shapeA", "A / Shape", 0.0f, 1.0f, 0.0f);
+    add ("tuneB", "B / Tune", -12.0f, 12.0f, 0.0f);
+    add ("densityB", "B / Density", 1.0f, 7.0f, 7.0f);
+    add ("shapeB", "B / Shape", 0.0f, 1.0f, 0.0f);
+    add ("lfoRate", "Filter LFO Rate", 0.05f, 12.0f, 0.4f);
+    add ("lfoDepth", "Filter LFO Depth", 0.0f, 1.0f, 0.0f);
+    add ("delayMix", "Delay Mix", 0.0f, 0.75f, 0.0f);
+    add ("delayTime", "Delay Time", 0.04f, 0.8f, 0.28f);
+    add ("delayFeedback", "Delay Feedback", 0.0f, 0.78f, 0.32f);
     return layout;
 }
 
@@ -149,11 +174,8 @@ anks::Patch SwarmProcessor::readLivePatch() const noexcept
 {
     const auto read = [this] (const char* id) { return parameters.getRawParameterValue (id)->load (std::memory_order_relaxed); };
     anks::Patch p;
-    p.detuneA = read ("detuneA"); p.widthA = read ("widthA"); p.motionA = read ("motionA");
-    p.detuneB = read ("detuneB"); p.widthB = read ("widthB"); p.motionB = read ("motionB");
-    p.mix = read ("mix"); p.cutoff = read ("cutoff"); p.resonance = read ("resonance");
-    p.drive = read ("drive"); p.attack = read ("attack"); p.release = read ("release");
-    p.output = read ("output");
+    for (size_t i = 0; i < patchIds.size(); ++i)
+        p.*patchFields[i] = read (patchIds[i]);
     return p;
 }
 
@@ -305,17 +327,34 @@ void SwarmProcessor::setStateInformation (const void* data, int size)
                 const auto child = scenesNode.getChild (childIndex);
                 const int slot = static_cast<int> (child.getProperty ("index", -1));
                 if (slot < 0 || slot >= 4) continue;
-                auto patch = scenes[static_cast<size_t> (slot)].load();
+                Patch patch;
                 for (size_t i = 0; i < patchFields.size(); ++i)
                 {
                     const auto key = "p" + juce::String (static_cast<int> (i));
-                    if (child.hasProperty (key)) patch.*patchFields[i] = static_cast<float> (child.getProperty (key));
+                    if (child.hasProperty (key))
+                    {
+                        const auto value = static_cast<float> (child.getProperty (key));
+                        const auto& range = parameters.getParameter (patchIds[i])->getNormalisableRange();
+                        if (std::isfinite (value))
+                            patch.*patchFields[i] = std::clamp (value, range.start, range.end);
+                    }
                 }
                 scenes[static_cast<size_t> (slot)].store (patch);
             }
         }
         // Keep only APVTS data in the parameter tree. Scene values are managed atomically.
         if (scenesNode.isValid()) restored.removeChild (scenesNode, nullptr);
+        for (size_t i = originalPatchFieldCount; i < patchIds.size(); ++i)
+        {
+            const auto* id = patchIds[i];
+            if (restored.getChildWithProperty ("id", id).isValid())
+                continue;
+            const auto* parameter = parameters.getParameter (id);
+            juce::ValueTree entry { "PARAM" };
+            entry.setProperty ("id", id, nullptr);
+            entry.setProperty ("value", parameter->convertFrom0to1 (parameter->getDefaultValue()), nullptr);
+            restored.addChild (entry, -1, nullptr);
+        }
         parameters.replaceState (restored);
     }
 }

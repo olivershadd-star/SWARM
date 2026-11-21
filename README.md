@@ -1,4 +1,4 @@
-# ANKS LABS — SWARM / 01 (reconstruction v0.3)
+# ANKS LABS — SWARM / 01 (version v0.4)
 
 Un **synthétiseur original** à deux essaims de dents de scie et morphing XY. Son esthétique graphique se rapproche volontairement de la philosophie colorée, expressive et immédiate de Native Instruments Super*Saw, **sans reprendre son interface exacte, sa marque ou son code propriétaire**.
 
@@ -83,6 +83,17 @@ Puis lancer un nouveau scan des plugins VST3 dans Ableton Live. Avec Live Lite, 
    et les valeurs affichées suivent leur interpolation. Cliquez sur A–D pour
    rappeler et éditer une scène, ou décochez MORPH pour retrouver le patch LIVE.
 5. Enregistrez le projet Ableton pour conserver les paramètres et les scènes.
+
+## Transformations v0.4
+
+- Chaque banque peut être transposée sur deux octaves, passer progressivement
+  d’un oscillateur à sept, et mélanger dent de scie et impulsion.
+- Le LFO triangulaire fait varier le cutoff. Le délai stéréo croisé ajoute des
+  répétitions d’un côté puis de l’autre. Les deux sont réglables séparément.
+- Les quatre coins d’usine explorent une basse resserrée, une nappe à l’octave,
+  une texture mobile et un son pulsé. CAP A–D mémorise aussi les nouveaux réglages.
+- Les identifiants d’automation et les 13 champs de scène d’origine gardent
+  leur ordre. Les anciens snapshots chargent les nouveaux champs au neutre.
 
 ## Test sans JUCE (réalisé)
 

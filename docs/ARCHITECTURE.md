@@ -1,6 +1,6 @@
 # SWARM / 01 — dossier technique / passation Codex
 
-Date : 20 novembre 2026. Version : 0.3 (reconstruction).
+Date : 20 novembre 2026. Version : 0.4.
 
 ## Intention artistique
 
@@ -12,8 +12,8 @@ Synthétiseur à empilements de dents de scie et morphing, fidèle dans l'esprit
 
 ```
 AudioProcessor (JUCE 8)
-  ├─ APVTS (16 paramètres automatisables)
-  ├─ 4 scenes atomiques (13 variables par scène)
+  ├─ APVTS (27 paramètres automatisables)
+  ├─ 4 scènes atomiques (24 variables par scène)
   ├─ MIDI parse (notes, pitch bend, CC64)
   └─ SwarmEngine (pur C++17)
        ├─ 8 Voice maximum
@@ -51,7 +51,7 @@ AudioProcessorEditor
 ## Morpher
 
 - Quatre configurations (A, B, C, D) stockées dans le plugin.
-- Les 13 variables de synthèse sont mélangées par les poids :
+- Les 24 variables de synthèse sont mélangées par les poids :
 
 ```
 A=(1-x)(1-y), B=x(1-y), C=(1-x)y, D=xy
@@ -60,7 +60,7 @@ A=(1-x)(1-y), B=x(1-y), C=(1-x)y, D=xy
 - Cutoff : moyenne pondérée dans le domaine logarithmique.
 - X/Y sont exposés comme paramètres VST3 automatisables.
 - Le moteur applique un lissage de 12 ms à chaque paramètre pour éviter les clics.
-- En v0.1, les scènes capturent les 13 commandes sonores mais pas l'état des 16 paramètres APVTS lui-même (MORPH X/Y et ON/OFF sont indépendants).
+- Les scènes capturent les 24 commandes sonores. X/Y et l’activation du morph sont indépendants. Les 13 champs du format v0.3 gardent leurs positions.
 - En LIVE, les molettes pilotent directement le moteur. En MORPH, les scènes calculent la cible audio et l’éditeur affiche les valeurs interpolées. Un rappel A–D recharge la scène en LIVE pour l’édition. Un compteur de génération par scène permet au thread audio de rejeter une capture partielle et de réutiliser la dernière scène complète.
 
 ## Real-time safety

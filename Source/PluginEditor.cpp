@@ -25,13 +25,13 @@ void tile (juce::Graphics& g, juce::Rectangle<int> box, juce::Colour fill)
 }
 
 void spectrum (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour colour,
-               float detune, float width, float motion)
+               float detune, float width, float motion, float density, float tune)
 {
     g.setColour (background.withAlpha (0.75f));
     g.fillRoundedRectangle (area.toFloat(), 8.0f);
     const auto data = area.reduced (14, 10).toFloat();
-    const auto mid = data.getCentreX();
-    const auto span = data.getWidth() * detune / 130.0f;
+    const auto mid = data.getCentreX() + data.getWidth() * tune / 96.0f;
+    const auto span = data.getWidth() * detune / 180.0f;
     const auto baseline = data.getBottom() - 10.0f;
     g.setColour (colour.withAlpha (0.22f));
     g.drawHorizontalLine (juce::roundToInt (baseline), data.getX(), data.getRight());
@@ -40,7 +40,8 @@ void spectrum (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour colour
         const auto pos = static_cast<float> (i) / 3.0f;
         const auto x = mid + span * pos;
         const auto h = (data.getHeight() - 16.0f) * (0.92f - std::abs (pos) * motion * 0.31f);
-        g.setColour (colour.withAlpha (1.0f - std::abs (pos) * width * 0.35f));
+        const auto weight = i == 0 ? 1.0f : juce::jlimit (0.0f, 1.0f, (density + 1.0f) * 0.5f - static_cast<float> (std::abs (i)));
+        g.setColour (colour.withAlpha (weight * (1.0f - std::abs (pos) * width * 0.35f)));
         g.fillRoundedRectangle (x - 2.0f, baseline - h, 4.0f, h, 2.0f);
     }
 }
@@ -124,6 +125,14 @@ public:
         juce::String formatted;
         if (key.startsWith ("detune"))
             formatted = juce::String (value, 1) + " ct";
+        else if (key.startsWith ("tune"))
+            formatted = juce::String (value, 1) + " st";
+        else if (key.startsWith ("density"))
+            formatted = juce::String (value, 1) + " / 7";
+        else if (key == "lfoRate")
+            formatted = juce::String (value, 2) + " Hz";
+        else if (key == "delayTime")
+            formatted = juce::String (value * 1000.0, 0) + " ms";
         else if (key == "cutoff")
             formatted = value < 1000.0 ? juce::String (value, 0) + " Hz"
                                        : juce::String (value / 1000.0, 2) + " kHz";
@@ -223,13 +232,19 @@ SwarmEditor::SwarmEditor (SwarmProcessor& p) : juce::AudioProcessorEditor (&p), 
     setLookAndFeel (&theme);
 
     const char* ids[] { "detuneA", "widthA", "motionA", "detuneB", "widthB", "motionB",
-                        "mix", "cutoff", "resonance", "drive", "attack", "release", "output" };
+                        "mix", "cutoff", "resonance", "drive", "attack", "release", "output",
+                        "tuneA", "densityA", "shapeA", "tuneB", "densityB", "shapeB",
+                        "lfoRate", "lfoDepth", "delayMix", "delayTime", "delayFeedback" };
     const char* names[] { "Detune", "Largeur", "Mouvement", "Detune", "Largeur", "Mouvement",
-                          "Mix A/B", "Cutoff", "Résonance", "Drive", "Attaque", "Relâchement", "Sortie" };
+                          "Mix A/B", "Cutoff", "Résonance", "Drive", "Attaque", "Relâchement", "Sortie",
+                          "Accord", "Densité", "Saw / Pulse", "Accord", "Densité", "Saw / Pulse",
+                          "Vitesse", "Profondeur", "Dosage", "Temps", "Feedback" };
     for (size_t i = 0; i < controls.size(); ++i)
     {
+        const bool inA = i < 3 || (i >= 13 && i < 16);
+        const bool inB = (i >= 3 && i < 6) || (i >= 16 && i < 19);
         controls[i] = std::make_unique<Control> (p, ids[i], juce::String::fromUTF8 (names[i]),
-                                                 i < 3 ? pink : (i < 6 ? lime : lilac));
+                                                 inA ? pink : (inB ? lime : lilac));
         addAndMakeVisible (*controls[i]);
     }
 
@@ -272,8 +287,8 @@ SwarmEditor::SwarmEditor (SwarmProcessor& p) : juce::AudioProcessorEditor (&p), 
     }
 
     setResizable (true, true);
-    setResizeLimits (920, keyboard ? 638 : 560, 1480, 900);
-    setSize (1060, keyboard ? 680 : 602);
+    setResizeLimits (920, keyboard ? 740 : 665, 1480, 940);
+    setSize (1060, keyboard ? 770 : 700);
     timerCallback();
     startTimerHz (24);
 }
@@ -290,8 +305,10 @@ void SwarmEditor::timerCallback()
 {
     viewingMorph = processor.parameters.getRawParameterValue ("morphOn")->load() >= 0.5f;
     const auto p = processor.getEffectivePatch();
-    const std::array<float, 13> values {p.detuneA, p.widthA, p.motionA, p.detuneB, p.widthB, p.motionB,
-                                      p.mix, p.cutoff, p.resonance, p.drive, p.attack, p.release, p.output};
+    const std::array<float, 24> values {p.detuneA, p.widthA, p.motionA, p.detuneB, p.widthB, p.motionB,
+                                      p.mix, p.cutoff, p.resonance, p.drive, p.attack, p.release, p.output,
+                                      p.tuneA, p.densityA, p.shapeA, p.tuneB, p.densityB, p.shapeB,
+                                      p.lfoRate, p.lfoDepth, p.delayMix, p.delayTime, p.delayFeedback};
     for (size_t i = 0; i < controls.size(); ++i)
         controls[i]->update (viewingMorph, values[i]);
     for (auto& save : saveButtons)
@@ -326,12 +343,15 @@ void SwarmEditor::paint (juce::Graphics& g)
     text (g, "MORPHER", morphPanel.reduced (14, 10).withHeight (28), 18.0f, lilac, true);
     text (g, "MIX     /     FILTRE     /     AMPLITUDE", master.reduced (14, 7).withHeight (24),
           14.0f, lilac, true);
+    auto effectsTitles = master.reduced (14, 0).withTrimmedTop (110).withHeight (18);
+    text (g, "LFO FILTRE", effectsTitles.removeFromLeft (effectsTitles.getWidth() * 2 / 5), 13.0f, pink, true);
+    text (g, "DELAI STEREO", effectsTitles, 13.0f, lime, true);
 
     const auto p = processor.getEffectivePatch();
-    spectrum (g, bankA.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (118),
-              pink, p.detuneA, p.widthA, p.motionA);
-    spectrum (g, bankB.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (118),
-              lime, p.detuneB, p.widthB, p.motionB);
+    spectrum (g, bankA.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188),
+              pink, p.detuneA, p.widthA, p.motionA, p.densityA, p.tuneA);
+    spectrum (g, bankB.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188),
+              lime, p.detuneB, p.widthB, p.motionB, p.densityB, p.tuneB);
 }
 
 void SwarmEditor::resized()
@@ -348,7 +368,7 @@ void SwarmEditor::resized()
         keyboard->setBounds (keys);
         layout.removeFromBottom (10);
     }
-    master = layout.removeFromBottom (126);
+    master = layout.removeFromBottom (213);
     layout.removeFromBottom (10);
 
     const int middleWidth = layout.getWidth() * 31 / 100;
@@ -365,9 +385,19 @@ void SwarmEditor::resized()
         for (size_t i = 0; i < count; ++i)
             controls[first + i]->setBounds (box.removeFromLeft (box.getWidth() / static_cast<int> (count - i)));
     };
-    row (bankA.reduced (10, 5).removeFromBottom (108), 0, 3);
-    row (bankB.reduced (10, 5).removeFromBottom (108), 3, 3);
-    row (master.reduced (10, 4).removeFromBottom (90), 6, 7);
+    auto a = bankA.reduced (10, 5);
+    auto b = bankB.reduced (10, 5);
+    row (a.removeFromBottom (88), 13, 3);
+    row (b.removeFromBottom (88), 16, 3);
+    row (a.removeFromBottom (88), 0, 3);
+    row (b.removeFromBottom (88), 3, 3);
+
+    auto sound = master.reduced (10, 4);
+    sound.removeFromTop (23);
+    row (sound.removeFromTop (84), 6, 7);
+    sound.removeFromTop (17);
+    row (sound.removeFromLeft (sound.getWidth() * 2 / 5), 19, 2);
+    row (sound, 21, 3);
 
     auto m = morphPanel.reduced (13, 8);
     morph.setBounds (m.removeFromTop (31).removeFromRight (90));

@@ -22,7 +22,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 8.0; }
+    double getTailLengthSeconds() const override { return 32.0; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram (int) override {}
@@ -44,7 +44,7 @@ public:
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout();
     anks::Patch readLivePatch() const noexcept;
-    static constexpr int patchFieldCount = 13;
+    static constexpr int patchFieldCount = 24;
     struct AtomicScene
     {
         std::array<std::atomic<float>, patchFieldCount> data {};

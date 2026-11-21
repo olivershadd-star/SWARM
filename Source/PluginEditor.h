@@ -20,7 +20,7 @@ private:
     class MorphPad;
     SwarmProcessor& processor;
     Theme theme;
-    std::array<std::unique_ptr<Control>, 13> controls;
+    std::array<std::unique_ptr<Control>, 24> controls;
     std::unique_ptr<MorphPad> pad;
     std::array<juce::TextButton, 4> recallButtons, saveButtons;
     juce::TextButton hearA { "A seul" }, hearB { "B seul" };

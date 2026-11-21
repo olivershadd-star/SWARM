@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <vector>
 #include <cmath>
 #include <cstdint>
 
@@ -33,6 +34,17 @@ struct Patch
     float attack = 0.015f;   // s, 0.005..3
     float release = 0.70f;   // s, 0.03..8
     float output = 0.78f;    // 0..1
+    float tuneA = 0.0f;
+    float densityA = 7.0f;
+    float shapeA = 0.0f;
+    float tuneB = 0.0f;
+    float densityB = 7.0f;
+    float shapeB = 0.0f;
+    float lfoRate = 0.4f;
+    float lfoDepth = 0.0f;
+    float delayMix = 0.0f;
+    float delayTime = 0.28f;
+    float delayFeedback = 0.32f;
 };
 
 // Four-corner interpolation. Filter frequency is interpolated logarithmically,
@@ -62,6 +74,17 @@ inline Patch interpolateScenes (const std::array<Patch, 4>& s, float x, float y)
     p.attack = blend (&Patch::attack);
     p.release = blend (&Patch::release);
     p.output = blend (&Patch::output);
+    p.tuneA = blend (&Patch::tuneA);
+    p.densityA = blend (&Patch::densityA);
+    p.shapeA = blend (&Patch::shapeA);
+    p.tuneB = blend (&Patch::tuneB);
+    p.densityB = blend (&Patch::densityB);
+    p.shapeB = blend (&Patch::shapeB);
+    p.lfoRate = blend (&Patch::lfoRate);
+    p.lfoDepth = blend (&Patch::lfoDepth);
+    p.delayMix = blend (&Patch::delayMix);
+    p.delayTime = blend (&Patch::delayTime);
+    p.delayFeedback = blend (&Patch::delayFeedback);
     p.cutoff = std::exp (wA * std::log (std::max (s[0].cutoff, 10.0f))
                        + wB * std::log (std::max (s[1].cutoff, 10.0f))
                        + wC * std::log (std::max (s[2].cutoff, 10.0f))
@@ -72,13 +95,18 @@ inline Patch interpolateScenes (const std::array<Patch, 4>& s, float x, float y)
 class SwarmEngine
 {
 public:
-    void prepare (double newSampleRate) noexcept
+    void prepare (double newSampleRate)
     {
         sampleRate = std::max (newSampleRate, 8000.0);
         smoothingAlpha = 1.0f - std::exp (-1.0f / (0.012f * static_cast<float> (sampleRate)));
         allNotesOff();
         ic1[0] = ic1[1] = ic2[0] = ic2[1] = 0.0f;
         filterUpdateCountdown = 0;
+        lfoPhase = 0.0f;
+        delayWrite = 0;
+        const auto capacity = static_cast<size_t> (sampleRate * 0.8) + 4;
+        delayLeft.assign (capacity, 0.0f);
+        delayRight.assign (capacity, 0.0f);
         current = target;
         setPitchBend (8192);
     }
@@ -166,6 +194,9 @@ public:
     void renderSample (float& outputLeft, float& outputRight) noexcept
     {
         smoothPatch();
+        lfoPhase += current.lfoRate / static_cast<float> (sampleRate);
+        if (lfoPhase >= 1.0f)
+            lfoPhase -= 1.0f;
         if (--filterUpdateCountdown <= 0) { updateFilter(); filterUpdateCountdown = 16; }
 
         float outL = 0.0f, outR = 0.0f;
@@ -182,8 +213,10 @@ public:
 
             const float frequency = v.baseFrequency * pitchFactor;
             float aL = 0.0f, aR = 0.0f, bL = 0.0f, bR = 0.0f;
-            renderBank (v.osc[0], frequency, current.detuneA, current.widthA, current.motionA, aL, aR, false);
-            renderBank (v.osc[1], frequency, current.detuneB, current.widthB, current.motionB, bL, bR, true);
+            renderBank (v.osc[0], frequency * pitchA, current.detuneA, current.widthA, current.motionA,
+                        current.densityA, current.shapeA, aL, aR, false);
+            renderBank (v.osc[1], frequency * pitchB, current.detuneB, current.widthB, current.motionB,
+                        current.densityB, current.shapeB, bL, bR, true);
             const float gain = v.envelope * (0.28f + 0.72f * v.velocity);
             outL += (aL * (1.0f - current.mix) + bL * current.mix) * gain;
             outR += (aR * (1.0f - current.mix) + bR * current.mix) * gain;
@@ -197,11 +230,39 @@ public:
 
         const float saturation = 1.0f + 11.0f * current.drive * current.drive;
         const float makeup = 1.0f / std::tanh (saturation);
-        outputLeft = std::tanh (outL * saturation) * makeup * current.output;
-        outputRight = std::tanh (outR * saturation) * makeup * current.output;
+        outL = std::tanh (outL * saturation) * makeup;
+        outR = std::tanh (outR * saturation) * makeup;
+        applyDelay (outL, outR);
+        outputLeft = outL * current.output;
+        outputRight = outR * current.output;
     }
 
 private:
+    float lfoPhase = 0.0f;
+    float pitchA = 1.0f, pitchB = 1.0f;
+    std::vector<float> delayLeft, delayRight;
+    size_t delayWrite = 0;
+
+    void applyDelay (float& left, float& right) noexcept
+    {
+        const auto size = delayLeft.size();
+        if (size == 0)
+            return;
+        const float offset = current.delayTime * static_cast<float> (sampleRate);
+        const auto whole = static_cast<size_t> (offset);
+        const auto index = delayWrite + (delayWrite >= whole ? 0u : size) - whole;
+        const auto older = index == 0 ? size - 1 : index - 1;
+        const float fraction = offset - static_cast<float> (whole);
+        const float echoL = lerp (delayLeft[index], delayLeft[older], fraction);
+        const float echoR = lerp (delayRight[index], delayRight[older], fraction);
+        delayLeft[delayWrite] = std::clamp (left + echoR * current.delayFeedback, -1.0f, 1.0f);
+        delayRight[delayWrite] = std::clamp (right + echoL * current.delayFeedback, -1.0f, 1.0f);
+        if (++delayWrite == size)
+            delayWrite = 0;
+        left = lerp (left, echoR, current.delayMix);
+        right = lerp (right, echoL, current.delayMix);
+    }
+
     struct Oscillator { float phase = 0.0f; float motionPhase = 0.0f; };
     struct Voice
     {
@@ -232,10 +293,10 @@ private:
     }
 
     void renderBank (Oscillator (&bank)[oscillatorsPerSwarm], float rootFrequency,
-                     float detune, float width, float motion,
+                     float detune, float width, float motion, float density, float shape,
                      float& left, float& right, bool invertPan) noexcept
     {
-        constexpr float invOscillators = 1.0f / static_cast<float> (oscillatorsPerSwarm);
+        const float normalizer = 1.0f / density;
         for (int i = 0; i < oscillatorsPerSwarm; ++i)
         {
             auto& o = bank[i];
@@ -246,6 +307,13 @@ private:
             const float ratio = 1.0f + 0.00057762265f * cents + 0.000000166825f * cents * cents;
             const float delta = std::clamp (rootFrequency * ratio / static_cast<float> (sampleRate), 0.0000001f, 0.48f);
             const float saw = 2.0f * o.phase - 1.0f - polyBlep (o.phase, delta);
+            float waveform = saw;
+            if (shape > 0.0001f)
+            {
+                const float shiftedPhase = o.phase < 0.5f ? o.phase + 0.5f : o.phase - 0.5f;
+                const float shiftedSaw = 2.0f * shiftedPhase - 1.0f - polyBlep (shiftedPhase, delta);
+                waveform = lerp (saw, saw - shiftedSaw, shape);
+            }
             o.phase += delta;
             if (o.phase >= 1.0f) o.phase -= 1.0f;
 
@@ -256,7 +324,9 @@ private:
             const float panMotion = triangle (o.motionPhase + (o.motionPhase > 0.63f ? -0.63f : 0.37f));
             const float pan = clamp01 (0.5f + (invertPan ? -1.0f : 1.0f) * position * width * 0.45f
                                          + panMotion * motion * 0.12f);
-            const float gain = saw * (1.0f + movement * motion * 0.18f) * invOscillators;
+            const float pair = std::abs (static_cast<float> (i - oscillatorsPerSwarm / 2));
+            const float weight = pair == 0.0f ? 1.0f : clamp01 ((density + 1.0f) * 0.5f - pair);
+            const float gain = waveform * weight * (1.0f + movement * motion * 0.18f) * normalizer;
             left += gain * (1.0f - pan);
             right += gain * pan;
         }
@@ -280,11 +350,25 @@ private:
         sm (current.attack, target.attack);
         sm (current.release, target.release);
         sm (current.output, target.output);
+        sm (current.tuneA, target.tuneA);
+        sm (current.densityA, target.densityA);
+        sm (current.shapeA, target.shapeA);
+        sm (current.tuneB, target.tuneB);
+        sm (current.densityB, target.densityB);
+        sm (current.shapeB, target.shapeB);
+        sm (current.lfoRate, target.lfoRate);
+        sm (current.lfoDepth, target.lfoDepth);
+        sm (current.delayMix, target.delayMix);
+        sm (current.delayTime, target.delayTime);
+        sm (current.delayFeedback, target.delayFeedback);
     }
 
     void updateFilter() noexcept
     {
-        const float fc = std::clamp (current.cutoff, 100.0f,
+        pitchA = std::exp2 (current.tuneA / 12.0f);
+        pitchB = std::exp2 (current.tuneB / 12.0f);
+        const float sweep = std::exp2 (triangle (lfoPhase) * current.lfoDepth * 3.0f);
+        const float fc = std::clamp (current.cutoff * sweep, 100.0f,
                                     std::min (18000.0f, static_cast<float> (sampleRate * 0.44)));
         const float g = std::tan (static_cast<float> (pi) * fc / static_cast<float> (sampleRate));
         const float q = 0.55f + clamp01 (current.resonance) * 7.5f;
