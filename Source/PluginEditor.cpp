@@ -23,28 +23,21 @@ void drawPanel (juce::Graphics& g, juce::Rectangle<int> rect, juce::Colour accen
     g.fillRoundedRectangle (r.getX() + 20.0f, r.getY() + 1.0f, r.getWidth() - 40.0f, 3.0f, 1.5f);
 }
 
-void drawSwarmArt (juce::Graphics& g, juce::Rectangle<int> rect, juce::Colour colour, bool flipped)
+void drawDetune (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour colour, float cents)
 {
-    const float x0 = static_cast<float> (rect.getX() + 25);
-    const float x1 = static_cast<float> (rect.getRight() - 25);
-    const float y0 = static_cast<float> (rect.getY() + 114);
-    const float width = x1 - x0;
-    for (int line = 0; line < 9; ++line)
+    const float mid = static_cast<float> (area.getCentreX());
+    const float span = static_cast<float> (area.getWidth()) * 0.45f;
+    const float spread = span * cents / 60.0f;
+    g.setColour (edge);
+    g.drawHorizontalLine (area.getBottom() - 2, static_cast<float> (area.getX()),
+                          static_cast<float> (area.getRight()));
+    for (int i = -3; i <= 3; ++i)
     {
-        juce::Path shape;
-        const float t = static_cast<float> (line - 4);
-        for (int i = 0; i <= 150; ++i)
-        {
-            const float u = static_cast<float> (i) / 150.0f;
-            const float envelope = std::sin (u * static_cast<float> (juce::MathConstants<double>::pi));
-            const float wobble = std::sin ((u * (flipped ? 12.0f : 8.0f) + t * 0.19f) * 6.2831853f) * envelope;
-            const float x = x0 + u * width;
-            const float y = y0 + t * (flipped ? 5.0f : 4.2f) + wobble * (6.5f + std::abs (t) * 1.2f);
-            if (i == 0) shape.startNewSubPath (x, y);
-            else shape.lineTo (x, y);
-        }
-        g.setColour (colour.withAlpha (0.29f + 0.06f * (4.0f - std::abs (t))));
-        g.strokePath (shape, juce::PathStrokeType (1.35f));
+        const float x = mid + spread * static_cast<float> (i) / 3.0f;
+        const float height = static_cast<float> (area.getHeight()) * (1.0f - 0.12f * static_cast<float> (std::abs (i)));
+        g.setColour (colour.withAlpha (i == 0 ? 1.0f : 0.62f));
+        g.fillRoundedRectangle (x - 2.0f, static_cast<float> (area.getBottom()) - height,
+                                4.0f, height - 2.0f, 2.0f);
     }
 }
 }
@@ -100,6 +93,7 @@ public:
         title.setFont (juce::Font (juce::FontOptions (12.0f)));
         addAndMakeVisible (title);
         slider.setLookAndFeel (&theme);
+        slider.setComponentID (id);
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 19);
         slider.setColour (juce::Slider::rotarySliderFillColourId, colour);
@@ -109,6 +103,24 @@ public:
         slider.setPopupDisplayEnabled (true, true, this);
         addAndMakeVisible (slider);
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (state, id, slider);
+        const auto formatter = [id] (double value)
+        {
+            if (id.startsWith ("detune")) return juce::String (value, 1) + " ct";
+            if (id == "cutoff") return value < 1000.0 ? juce::String (value, 0) + " Hz"
+                                                        : juce::String (value / 1000.0, 2) + " kHz";
+            if (id == "attack" || id == "release") return juce::String (value * 1000.0, 0) + " ms";
+            return juce::String (value * 100.0, 0) + "%";
+        };
+        slider.textFromValueFunction = formatter;
+        slider.valueFromTextFunction = [id] (const juce::String& text)
+        {
+            const auto value = text.getDoubleValue();
+            if (id.startsWith ("detune")) return value;
+            if (id == "cutoff") return text.containsIgnoreCase ("kHz") ? value * 1000.0 : value;
+            if (id == "attack" || id == "release") return value / 1000.0;
+            return value / 100.0;
+        };
+        slider.updateText();
     }
     ~Knob() override { attachment.reset(); slider.setLookAndFeel (nullptr); }
     void resized() override
@@ -148,7 +160,7 @@ public:
         g.drawVerticalLine (juce::roundToInt (area.getCentreX()), area.getY() + 3, area.getBottom() - 3);
         g.drawHorizontalLine (juce::roundToInt (area.getCentreY()), area.getX() + 3, area.getRight() - 3);
 
-        constexpr const char* labels[] = {"A", "B", "C", "D"};
+        constexpr const char* labels[] = {"1", "2", "3", "4"};
         for (int i = 0; i < 4; ++i)
         {
             const bool right = (i % 2) == 1;
@@ -181,7 +193,6 @@ public:
     {
         x->beginChangeGesture();
         y->beginChangeGesture();
-        enabled->setValueNotifyingHost (1.0f);
         setPosition (e.position);
     }
     void mouseDrag (const juce::MouseEvent& e) override { setPosition (e.position); }
@@ -231,125 +242,154 @@ SwarmEditor::SwarmEditor (SwarmProcessor& p)
     for (int i = 0; i < 4; ++i)
     {
         auto& b = captureButtons[static_cast<size_t> (i)];
-        b.setButtonText ("CAP " + juce::String ("ABCD").substring (i, i + 1));
+        b.setButtonText ("Save " + juce::String (i + 1));
         b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff36394d));
         b.setColour (juce::TextButton::textColourOffId, white);
         b.onClick = [this, i]
         {
             processor.captureScene (i);
-            status.setText ("SCENE " + juce::String ("ABCD").substring (i, i + 1) + " SAVED",
+            status.setText ("Scene " + juce::String (i + 1) + " saved",
                             juce::dontSendNotification);
         };
         addAndMakeVisible (b);
     }
-    morphToggle.setButtonText ("MORPH  ON / OFF");
+    morphToggle.setButtonText ("Enable morph");
     morphToggle.setClickingTogglesState (true);
     morphToggle.setColour (juce::ToggleButton::textColourId, white);
     morphToggle.setColour (juce::ToggleButton::tickColourId, lime);
     addAndMakeVisible (morphToggle);
     morphAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
         (processor.parameters, "morphOn", morphToggle);
-    status.setText ("LIVE: edit  /  CAP: save  /  MORPH: blend", juce::dontSendNotification);
     status.setJustificationType (juce::Justification::centred);
     status.setColour (juce::Label::textColourId, muted);
     status.setFont (juce::Font (juce::FontOptions (12.0f)));
     addAndMakeVisible (status);
 
+    auto* mix = processor.parameters.getParameter ("mix");
+    listenA.onClick = [mix]
+    {
+        mix->beginChangeGesture();
+        mix->setValueNotifyingHost (0.0f);
+        mix->endChangeGesture();
+    };
+    listenB.onClick = [mix]
+    {
+        mix->beginChangeGesture();
+        mix->setValueNotifyingHost (1.0f);
+        mix->endChangeGesture();
+    };
+    addAndMakeVisible (listenA);
+    addAndMakeVisible (listenB);
+
+    if (processor.wrapperType == juce::AudioProcessor::wrapperType_Standalone)
+    {
+        keyboard = std::make_unique<juce::MidiKeyboardComponent> (
+            processor.auditionKeyboard, juce::MidiKeyboardComponent::horizontalKeyboard);
+        keyboard->setAvailableRange (48, 83);
+        keyboard->setLowestVisibleKey (48);
+        keyboard->setWantsKeyboardFocus (true);
+        addAndMakeVisible (*keyboard);
+    }
+
     setResizable (true, true);
-    setResizeLimits (1000, 670, 1480, 850);
-    setSize (1120, 705);
+    setResizeLimits (870, keyboard != nullptr ? 575 : 515, 1480, 850);
+    setSize (1000, keyboard != nullptr ? 640 : 580);
+    timerCallback();
+    startTimerHz (24);
 }
 
 SwarmEditor::~SwarmEditor()
 {
+    stopTimer();
     morphAttachment.reset();
     pad.reset();
     knobs.clear();
 }
 
+void SwarmEditor::timerCallback()
+{
+    const bool enabled = processor.parameters.getRawParameterValue ("morphOn")->load() >= 0.5f;
+    if (displayedMorphMode != enabled)
+    {
+        displayedMorphMode = enabled;
+        status.setText (enabled ? "Scenes shape the live controls"
+                                : "Live controls active",
+                        juce::dontSendNotification);
+    }
+    repaint();
+}
+
 void SwarmEditor::paint (juce::Graphics& g)
 {
     g.fillAll (background);
-    juce::ColourGradient header (juce::Colour (0xff222336), 0.0f, 0.0f,
-                                 background, static_cast<float> (getWidth()), 126.0f, false);
-    g.setGradientFill (header);
-    g.fillRect (0, 0, getWidth(), 112);
-
-    g.setFont (juce::Font (juce::FontOptions (11.0f).withStyle ("Bold")));
-    g.setColour (pink);
-    g.drawText ("ANKS / LABS", 27, 14, 230, 19, juce::Justification::centredLeft);
     g.setColour (white);
-    g.setFont (juce::Font (juce::FontOptions (37.0f).withStyle ("Bold")));
-    g.drawText ("SWARM", 25, 35, 235, 56, juce::Justification::centredLeft);
-    g.setColour (lime);
-    g.drawText ("/ 01", 249, 35, 120, 56, juce::Justification::centredLeft);
-    g.setColour (muted);
-    g.setFont (juce::Font (juce::FontOptions (12.0f)));
-    g.drawText ("DUAL SAW SYNTHESIS  •  FOUR-CORNER MORPHING  •  VST3 / STANDALONE",
-                398, 48, getWidth() - 430, 35, juce::Justification::centredRight);
+    g.setFont (juce::Font (juce::FontOptions (32.0f).withStyle ("Bold")));
+    g.drawText ("SWARM / 01", 18, 9, 280, 45, juce::Justification::centredLeft);
 
     drawPanel (g, leftPanel, pink);
     drawPanel (g, rightPanel, lime);
     drawPanel (g, morphPanel, blue);
     drawPanel (g, bottomPanel, blue);
 
-    g.setFont (juce::Font (juce::FontOptions (18.0f).withStyle ("Bold")));
-    g.setColour (pink);
-    g.drawText ("SWARM  A", leftPanel.reduced (24).removeFromTop (58), juce::Justification::centredLeft);
-    g.setColour (lime);
-    g.drawText ("SWARM  B", rightPanel.reduced (24).removeFromTop (58), juce::Justification::centredLeft);
-    g.setColour (white);
-    g.drawText ("MORPH / XY", morphPanel.reduced (24).removeFromTop (48), juce::Justification::centredLeft);
+    const auto drawTitle = [&g] (const char* title, juce::Rectangle<int> bounds, juce::Colour colour)
+    {
+        g.setColour (colour);
+        g.setFont (juce::Font (juce::FontOptions (17.0f).withStyle ("Bold")));
+        g.drawText (title, bounds, juce::Justification::centredLeft);
+    };
+    drawTitle ("SWARM A", leftPanel.reduced (16, 9).removeFromTop (31), pink);
+    drawTitle ("SWARM B", rightPanel.reduced (16, 9).removeFromTop (31), lime);
+    drawTitle ("SCENE MORPH", morphPanel.reduced (16, 9).removeFromTop (31), blue);
+    drawTitle ("MIX / FILTER / AMP", bottomPanel.reduced (16, 5).removeFromTop (24), white);
 
-    g.setFont (juce::Font (juce::FontOptions (10.0f)));
-    g.setColour (muted);
-    g.drawText ("7 OSCILLATORS / PINK", leftPanel.getX() + 24, leftPanel.getY() + 52,
-                leftPanel.getWidth() - 45, 16, juce::Justification::centredLeft);
-    g.drawText ("7 OSCILLATORS / GREEN", rightPanel.getX() + 24, rightPanel.getY() + 52,
-                rightPanel.getWidth() - 45, 16, juce::Justification::centredLeft);
-    drawSwarmArt (g, leftPanel, pink, false);
-    drawSwarmArt (g, rightPanel, lime, true);
-
-    g.setFont (juce::Font (juce::FontOptions (12.0f).withStyle ("Bold")));
-    g.setColour (white);
-    g.drawText ("MASTER / SHAPE", bottomPanel.getX() + 22, bottomPanel.getY() + 4, 300, 19,
-                juce::Justification::centredLeft);
-    g.setFont (juce::Font (juce::FontOptions (10.0f)));
-    g.setColour (muted);
-    g.drawText ("V0.1  •  ORIGINAL ANKS LABS DESIGN  •  NO AUDIO FROM KICK",
-                22, getHeight() - 22, getWidth() - 44, 14, juce::Justification::centredRight);
+    drawDetune (g, leftPanel.reduced (24, 0).withTrimmedTop (62).withHeight (75),
+                pink, processor.parameters.getRawParameterValue ("detuneA")->load());
+    drawDetune (g, rightPanel.reduced (24, 0).withTrimmedTop (62).withHeight (75),
+                lime, processor.parameters.getRawParameterValue ("detuneB")->load());
 }
 
 void SwarmEditor::resized()
 {
-    const int margin = 22, gap = 14;
-    const int centreWidth = 330;
-    const int sideWidth = (getWidth() - 2 * margin - 2 * gap - centreWidth) / 2;
-    const int top = 119, panelHeight = getHeight() - 295;
-    leftPanel = {margin, top, sideWidth, panelHeight};
-    morphPanel = {margin + sideWidth + gap, top, centreWidth, panelHeight};
-    rightPanel = {morphPanel.getRight() + gap, top, sideWidth, panelHeight};
-    bottomPanel = {margin, top + panelHeight + 15, getWidth() - 2 * margin, 136};
-
-    for (int i = 0; i < 3; ++i)
+    auto bounds = getLocalBounds().reduced (16, 10);
+    bounds.removeFromTop (50);
+    if (keyboard != nullptr)
     {
-        const auto cw = (sideWidth - 38) / 3;
-        knobs[static_cast<size_t> (i)]->setBounds (leftPanel.getX() + 19 + i * cw,
-                                                   leftPanel.getBottom() - 137, cw, 112);
-        knobs[static_cast<size_t> (i + 3)]->setBounds (rightPanel.getX() + 19 + i * cw,
-                                                       rightPanel.getBottom() - 137, cw, 112);
+        auto keys = bounds.removeFromBottom (56);
+        keyboard->setKeyWidth (static_cast<float> (keys.getWidth()) / 21.0f);
+        keyboard->setBounds (keys);
+        bounds.removeFromBottom (10);
     }
-    pad->setBounds (morphPanel.getX() + 27, morphPanel.getY() + 50,
-                    morphPanel.getWidth() - 54, panelHeight - 164);
-    const int buttonW = (centreWidth - 62) / 4;
-    for (int i = 0; i < 4; ++i)
-        captureButtons[static_cast<size_t> (i)].setBounds (morphPanel.getX() + 24 + i * (buttonW + 5),
-                                                          morphPanel.getBottom() - 99, buttonW, 31);
-    morphToggle.setBounds (morphPanel.getX() + 86, morphPanel.getBottom() - 62, 205, 27);
-    status.setBounds (morphPanel.getX() + 8, morphPanel.getBottom() - 35, centreWidth - 16, 22);
+    bottomPanel = bounds.removeFromBottom (126);
+    bounds.removeFromBottom (10);
+    const int gap = 10;
+    const int centreWidth = bounds.getWidth() * 34 / 100;
+    const int leftWidth = (bounds.getWidth() - centreWidth - 2 * gap) / 2;
+    leftPanel = bounds.removeFromLeft (leftWidth);
+    bounds.removeFromLeft (gap);
+    morphPanel = bounds.removeFromLeft (centreWidth);
+    bounds.removeFromLeft (gap);
+    rightPanel = bounds;
 
-    const int bottomKnobWidth = (bottomPanel.getWidth() - 26) / 7;
-    for (int i = 6; i < 13; ++i)
-        knobs[static_cast<size_t> (i)]->setBounds (bottomPanel.getX() + 13 + (i - 6) * bottomKnobWidth,
-                                                   bottomPanel.getY() + 23, bottomKnobWidth, 105);
+    listenA.setBounds (leftPanel.getRight() - 81, leftPanel.getY() + 14, 66, 26);
+    listenB.setBounds (rightPanel.getRight() - 81, rightPanel.getY() + 14, 66, 26);
+    const auto layoutKnobs = [this] (juce::Rectangle<int> row, int first, int count)
+    {
+        for (int i = 0; i < count; ++i)
+            knobs[static_cast<size_t> (first + i)]->setBounds (row.removeFromLeft (row.getWidth() / (count - i)));
+    };
+    layoutKnobs (leftPanel.reduced (12, 8).removeFromBottom (104), 0, 3);
+    layoutKnobs (rightPanel.reduced (12, 8).removeFromBottom (104), 3, 3);
+    layoutKnobs (bottomPanel.reduced (10, 5).removeFromBottom (94), 6, 7);
+
+    auto morph = morphPanel.reduced (14, 8);
+    morph.removeFromTop (32);
+    status.setBounds (morph.removeFromBottom (18));
+    morphToggle.setBounds (morph.removeFromBottom (26).withSizeKeepingCentre (130, 26));
+    auto captures = morph.removeFromBottom (29);
+    for (auto& button : captureButtons)
+    {
+        const int remaining = static_cast<int> (captureButtons.data() + captureButtons.size() - &button);
+        button.setBounds (captures.removeFromLeft (captures.getWidth() / remaining).reduced (2, 1));
+    }
+    pad->setBounds (morph);
 }

@@ -4,7 +4,11 @@
 namespace
 {
 using Patch = anks::Patch;
-constexpr std::array<float Patch::*, 13> patchFields {
+constexpr std::array<const char*, 13> patchIds {
+    "detuneA", "widthA", "motionA", "detuneB", "widthB", "motionB",
+    "mix", "cutoff", "resonance", "drive", "attack", "release", "output"
+};
+constexpr std::array<float Patch::*, patchIds.size()> patchFields {
     &Patch::detuneA, &Patch::widthA, &Patch::motionA,
     &Patch::detuneB, &Patch::widthB, &Patch::motionB,
     &Patch::mix, &Patch::cutoff, &Patch::resonance,
@@ -85,6 +89,8 @@ SwarmProcessor::SwarmProcessor()
 
 void SwarmProcessor::prepareToPlay (double sampleRate, int)
 {
+    auditionKeyboard.reset();
+    engine.setPatch (readEffectivePatch());
     engine.prepare (sampleRate);
     engine.setVoiceLimit (8);
 }
@@ -99,14 +105,41 @@ bool SwarmProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 
 anks::Patch SwarmProcessor::readLivePatch() const noexcept
 {
-    const auto read = [this] (const char* id) { return parameters.getRawParameterValue (id)->load (std::memory_order_relaxed); };
-    anks::Patch p;
-    p.detuneA = read ("detuneA"); p.widthA = read ("widthA"); p.motionA = read ("motionA");
-    p.detuneB = read ("detuneB"); p.widthB = read ("widthB"); p.motionB = read ("motionB");
-    p.mix = read ("mix"); p.cutoff = read ("cutoff"); p.resonance = read ("resonance");
-    p.drive = read ("drive"); p.attack = read ("attack"); p.release = read ("release");
-    p.output = read ("output");
-    return p;
+    Patch patch;
+    for (size_t i = 0; i < patchIds.size(); ++i)
+        patch.*patchFields[i] = parameters.getRawParameterValue (patchIds[i])->load (std::memory_order_relaxed);
+    return patch;
+}
+
+anks::Patch SwarmProcessor::readEffectivePatch() const noexcept
+{
+    auto live = readLivePatch();
+    const auto read = [this] (const char* id)
+    {
+        return parameters.getRawParameterValue (id)->load (std::memory_order_relaxed);
+    };
+    if (read ("morphOn") < 0.5f)
+        return live;
+
+    const std::array<Patch, 4> corners { scenes[0].load(), scenes[1].load(),
+                                         scenes[2].load(), scenes[3].load() };
+    const auto scene = anks::interpolateScenes (corners, read ("morphX"), read ("morphY"));
+    // The scene shifts the response around the knob's factory position. Min and
+    // max remain reachable and every knob still moves the sound in one direction.
+    for (size_t i = 0; i < patchIds.size() - 1; ++i) // Output is always the master level.
+    {
+        const auto* parameter = parameters.getParameter (patchIds[i]);
+        const auto field = patchFields[i];
+        const float pivot = parameter->getDefaultValue();
+        const float position = parameter->convertTo0to1 (live.*field);
+        const float scenePosition = parameter->convertTo0to1 (scene.*field);
+        const float shifted = anks::lerp (pivot, scenePosition, 0.85f);
+        const float mapped = position <= pivot
+            ? shifted * (position / pivot)
+            : anks::lerp (shifted, 1.0f, (position - pivot) / (1.0f - pivot));
+        live.*field = parameter->convertFrom0to1 (mapped);
+    }
+    return live;
 }
 
 void SwarmProcessor::captureScene (int sceneIndex) noexcept
@@ -129,16 +162,9 @@ void SwarmProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     const int numSamples = buffer.getNumSamples();
     if (numSamples == 0) return;
 
-    const auto read = [this] (const char* id) { return parameters.getRawParameterValue (id)->load (std::memory_order_relaxed); };
-    anks::Patch target = readLivePatch();
-    if (read ("morphOn") >= 0.5f)
-    {
-        const std::array<anks::Patch, 4> sceneValues = {
-            scenes[0].load(), scenes[1].load(), scenes[2].load(), scenes[3].load()
-        };
-        target = anks::interpolateScenes (sceneValues, read ("morphX"), read ("morphY"));
-    }
-    engine.setPatch (target);
+    engine.setPatch (readEffectivePatch());
+    if (wrapperType == wrapperType_Standalone)
+        auditionKeyboard.processNextMidiBuffer (midi, 0, numSamples, true);
 
     auto* left = buffer.getWritePointer (0);
     auto* right = buffer.getWritePointer (1);

@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-class SwarmEditor final : public juce::AudioProcessorEditor
+class SwarmEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
     explicit SwarmEditor (SwarmProcessor&);
@@ -25,6 +25,10 @@ private:
     juce::ToggleButton morphToggle;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> morphAttachment;
     juce::Label status;
+    juce::TextButton listenA { "Hear A" }, listenB { "Hear B" };
+    std::unique_ptr<juce::MidiKeyboardComponent> keyboard;
+    std::optional<bool> displayedMorphMode;
+    void timerCallback() override;
 
     juce::Rectangle<int> leftPanel, rightPanel, morphPanel, bottomPanel;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SwarmEditor)

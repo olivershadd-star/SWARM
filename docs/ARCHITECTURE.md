@@ -61,7 +61,7 @@ A=(1-x)(1-y), B=x(1-y), C=(1-x)y, D=xy
 - X/Y sont exposés comme paramètres VST3 automatisables.
 - Le moteur applique un lissage de 12 ms à chaque paramètre pour éviter les clics.
 - En v0.1, les scènes capturent les 13 commandes sonores mais pas l'état des 16 paramètres APVTS lui-même (MORPH X/Y et ON/OFF sont indépendants).
-- Le contrôle LIVE est sélectionné quand MORPH=OFF ; lors de MORPH=ON les paramètres de scène calculent la cible audio.
+- En v0.2, les molettes pilotent le son dans les deux modes. En mode MORPH, les scènes déplacent la réponse autour de la valeur d’usine. Les deux extrémités de chaque plage restent accessibles, et Output reste indépendant. Le pad ne bascule pas le mode de lui-même.
 
 ## Real-time safety
 

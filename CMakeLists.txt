@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(ANKS_Swarm_01 VERSION 0.1.0 LANGUAGES C CXX)
+project(ANKS_Swarm_01 VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,6 +75,12 @@ if (ANKS_BUILD_DSP_TESTS)
     add_executable(swarm_dsp_stress Tests/stress_dsp.cpp Source/DSP/SwarmEngine.h)
     target_compile_features(swarm_dsp_stress PRIVATE cxx_std_17)
     add_test(NAME SwarmStress COMMAND swarm_dsp_stress)
+    add_executable(swarm_controls_test Tests/test_controls.cpp)
+    target_link_libraries(swarm_controls_test PRIVATE ANKS_Swarm_01)
+    target_include_directories(swarm_controls_test PRIVATE
+        "$<TARGET_PROPERTY:ANKS_Swarm_01,INCLUDE_DIRECTORIES>")
+    add_test(NAME SwarmControls COMMAND swarm_controls_test)
+
 endif()
 
 if (WIN32)

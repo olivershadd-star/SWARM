@@ -32,12 +32,14 @@ public:
     void setStateInformation (const void*, int) override;
 
     juce::AudioProcessorValueTreeState parameters;
+    juce::MidiKeyboardState auditionKeyboard;
     void captureScene (int sceneIndex) noexcept;
     anks::Patch getScene (int sceneIndex) const noexcept;
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout();
     anks::Patch readLivePatch() const noexcept;
+    anks::Patch readEffectivePatch() const noexcept;
     static constexpr int patchFieldCount = 13;
     struct AtomicScene
     {

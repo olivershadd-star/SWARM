@@ -1,4 +1,4 @@
-# ANKS LABS — SWARM / 01 (prototype v0.1)
+# ANKS LABS — SWARM / 01 (prototype v0.2)
 
 Un **synthétiseur original** à deux essaims de dents de scie et morphing XY. Son esthétique graphique se rapproche volontairement de la philosophie colorée, expressive et immédiate de Native Instruments Super*Saw, **sans reprendre son interface exacte, sa marque ou son code propriétaire**.
 
@@ -69,14 +69,11 @@ Puis lancer un nouveau scan des plugins VST3 dans Ableton Live. Avec Live Lite, 
 
 ## Utilisation rapide
 
-1. Ouvrir l'instrument sur une piste MIDI.
-2. Laisser **MORPH OFF** pour piloter directement les molettes roses, vertes et les commandes MASTER.
-3. Choisir un réglage, puis cliquer sur **CAP A** pour enregistrer cette configuration comme scène A. Modifier les molettes et cliquer **CAP B**, puis éventuellement **CAP C** et **CAP D**.
-4. Activer **MORPH ON**, ou cliquer dans la zone XY (ce qui l'active), puis déplacer le point entre les quatre coins.
-5. Réactiver le mode **LIVE** pour modifier les réglages sans remplacer automatiquement les scènes sauvegardées.
-6. Enregistrer le projet Ableton : les paramètres et scènes sont sérialisés avec l'état du plugin.
-
-**Important :** dans la v0.1, quand le mode MORPH est activé, les commandes LIVE restent visibles mais **n'affectent pas le son tant que MORPH reste actif**. C'est un choix de fonctionnement explicite pour éviter toute ambiguïté entre l'édition de scènes et leur interpolation.
+1. Dans le standalone, cliquer sur le clavier intégré. Dans Ableton, déposer le VST3 sur une piste MIDI et jouer ou lancer un clip.
+2. **Hear A** et **Hear B** déplacent le mix à une extrémité pour écouter une banque seule. Le mix reste ajustable.
+3. Régler les molettes, puis cliquer sur **Save 1–4** pour mémoriser les réglages dans un coin.
+4. Cocher **Enable morph**, puis déplacer le point entre les quatre coins. Les scènes modulent la réponse des molettes autour de leur position d’usine. Les valeurs min/max restent disponibles, et le bouton Output reste un niveau maître indépendant.
+5. Enregistrer le projet Ableton pour conserver les réglages, le mode et les quatre scènes.
 
 ## Test sans JUCE (réalisé)
 
