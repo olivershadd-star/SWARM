@@ -1,4 +1,31 @@
-# ANKS LABS — SWARM / 01 (prototype v0.2)
+<div align="center">
+
+# ANKS LABS / SWARM / 01
+### DUAL SWARM OSCILLATORS · XY MORPHING · DSP
+
+![Status](https://img.shields.io/badge/STATUS-PROTOTYPE_V0.2-EF343E?style=for-the-badge&labelColor=10151E)
+![Audio](https://img.shields.io/badge/AUDIO-DEVELOPMENT-19B9FF?style=for-the-badge&labelColor=10151E)
+
+**BUILD. BREAK. REWIRE. LISTEN.**
+
+[![ANKS LABS](https://img.shields.io/badge/ANKS_LABS-GITHUB_PROFILE-19B9FF?style=for-the-badge&labelColor=10151E)](https://github.com/olivershadd-star)
+
+</div>
+
+---
+
+## 01 // LE PROJET
+
+**SWARM / 01** est un synthétiseur original construit autour de deux bancs de sept oscillateurs PolyBLEP, avec unison, détune, mouvement stéréo, filtre résonant et morphing XY entre quatre scènes. Son objectif est l'exploration rapide de textures larges et de mouvements continus.
+
+> **Statut : prototype v0.2 / moteur DSP testé hors JUCE.** La compilation et le fonctionnement VST3/standalone sur la machine Windows cible restent à valider ; ce n'est pas une release stable.
+
+**[Sources & documentation](https://github.com/olivershadd-star/SWARM)** · **[Builds de test / GitHub Actions](https://github.com/olivershadd-star/SWARM/actions)**
+
+---
+
+## Documentation technique existante — SWARM / 01 v0.2
+
 
 Un **synthétiseur original** à deux essaims de dents de scie et morphing XY. Son esthétique graphique se rapproche volontairement de la philosophie colorée, expressive et immédiate de Native Instruments Super*Saw, **sans reprendre son interface exacte, sa marque ou son code propriétaire**.
 
