@@ -9,9 +9,22 @@ jobs:
   build:
     runs-on: windows-2022
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Lire le numéro de version
+        id: version
+        shell: pwsh
+        run: |
+          $match = Select-String -Path CMakeLists.txt -Pattern 'project\([A-Za-z0-9_]+ VERSION ([0-9.]+)'
+          $version = $match.Matches[0].Groups[1].Value
+          $exists = git tag --list "v$version"
+          $publish = (-not $exists) -and ('${{ github.event_name }}' -ne 'pull_request') -and ('${{ github.ref }}' -eq 'refs/heads/main')
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "publish=$($publish.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Host "Version $version - publication : $publish"
       - name: Configure Visual Studio 2022 x64
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
       - name: Build Release
@@ -26,3 +39,37 @@ jobs:
           name: ANKS-Swarm-01-Windows-Release
           path: build/packages/Release/*.zip
           if-no-files-found: error
+      - name: Préparer le ZIP numéroté
+        if: steps.version.outputs.publish == 'true'
+        shell: pwsh
+        run: |
+          $name = "SWARM-Windows-x64-${{ steps.version.outputs.version }}"
+          $dir = "release/$name"
+          New-Item -ItemType Directory -Force "$dir/VST3","$dir/Application" | Out-Null
+          Get-ChildItem build -Recurse -Directory -Filter *.vst3 | Where-Object { $_.FullName -match '\\(Release\\VST3|VST3\\Release)\\[^\\]+\.vst3$' } | ForEach-Object { Copy-Item $_.FullName "$dir/VST3/" -Recurse -Force }
+          if (-not (Get-ChildItem "$dir/VST3")) { throw "Aucun VST3 trouvé dans build" }
+          Get-ChildItem build -Recurse -File -Filter *.exe | Where-Object { $_.FullName -match '\\Release\\Standalone\\' } | ForEach-Object { Copy-Item $_.FullName "$dir/Application/" }
+          if (-not (Get-ChildItem "$dir/Application")) { Remove-Item "$dir/Application" }
+          Copy-Item README.md "$dir/"
+          Compress-Archive -Path $dir -DestinationPath "release/$name.zip" -Force
+          Get-ChildItem release
+      - name: Publier la version (onglet Releases)
+        if: steps.version.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: SWARM ${{ steps.version.outputs.version }}
+          prerelease: true
+          files: release/*.zip
+          body: |
+            **SWARM / 01 — synthé à essaims d'oscillateurs — ANKS Labs, gratuit.** Version de test : à essayer, pas encore une version finale.
+
+            1. Télécharge `SWARM-Windows-x64-${{ steps.version.outputs.version }}.zip` ci-dessous (rubrique *Assets*) et fais clic droit → **Extraire tout**.
+            2. **Plugin pour Ableton** : copie le dossier `VST3\ANKS SWARM 01.vst3` dans `C:\Program Files\Common Files\VST3`.
+            3. Dans Live : **Préférences → Plug-ins → Dossier système VST3 = On**, puis **Relancer l'analyse**. Le plugin apparaît sous **Plug-ins**.
+            4. **Sans Ableton** : lance `Application\ANKS SWARM 01.exe`. Aucune installation.
+
+            *Windows peut afficher « Windows a protégé votre ordinateur » : Informations complémentaires → Exécuter quand même (programme gratuit non signé).*
+
+            **EN —** Download `SWARM-Windows-x64-${{ steps.version.outputs.version }}.zip`, extract it and copy `VST3\ANKS SWARM 01.vst3` to `C:\Program Files\Common Files\VST3`, then rescan plug-ins in your DAW. Or run `Application\ANKS SWARM 01.exe` standalone.

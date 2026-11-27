@@ -14,13 +14,29 @@
 
 ---
 
+## ⬇ TÉLÉCHARGER ET INSTALLER — DOWNLOAD
+
+[![TÉLÉCHARGER LA DERNIÈRE VERSION](https://img.shields.io/github/v/release/olivershadd-star/SWARM?include_prereleases&sort=date&display_name=tag&style=for-the-badge&logo=github&logoColor=F7FAFF&label=T%C3%89L%C3%89CHARGER&labelColor=10151E&color=EF343E)](../../releases/latest) [![TOUTES LES VERSIONS](https://img.shields.io/badge/TOUTES_LES-VERSIONS-F5C343?style=for-the-badge&labelColor=10151E)](../../releases)
+
+1. Clique sur **TÉLÉCHARGER**, puis, dans la rubrique *Assets*, télécharge `SWARM-Windows-x64-X.Y.Z.zip` (X.Y.Z = numéro de version : prends toujours le plus grand).
+2. Clic droit sur le ZIP → **Extraire tout**.
+3. **Plugin pour Ableton** : copie le dossier `VST3\ANKS SWARM 01.vst3` dans `C:\Program Files\Common Files\VST3`.
+4. Dans Live : **Préférences → Plug-ins → Dossier système VST3 = On**, puis **Relancer l'analyse**.
+5. **Sans Ableton** : lance `Application\ANKS SWARM 01.exe`. Aucune installation.
+
+*Windows peut afficher « Windows a protégé votre ordinateur » : clique sur **Informations complémentaires → Exécuter quand même** (programme gratuit non signé, c'est normal).*
+
+**EN —** Click **DOWNLOAD**, get `SWARM-Windows-x64-X.Y.Z.zip` from *Assets*, extract it and copy `VST3\ANKS SWARM 01.vst3` to `C:\Program Files\Common Files\VST3`, then rescan plug-ins. Or run `Application\ANKS SWARM 01.exe` without any DAW.
+
+---
+
 ## 01 // LE PROJET
 
 **SWARM / 01** est un synthétiseur original construit autour de deux bancs de sept oscillateurs PolyBLEP, avec unison, détune, mouvement stéréo, filtre résonant et morphing XY entre quatre scènes. Son objectif est l'exploration rapide de textures larges et de mouvements continus.
 
 > **Statut : prototype v0.2 / moteur DSP testé hors JUCE.** La compilation et le fonctionnement VST3/standalone sur la machine Windows cible restent à valider ; ce n'est pas une release stable.
 
-**[Sources & documentation](https://github.com/olivershadd-star/SWARM)** · **[Builds de test / GitHub Actions](https://github.com/olivershadd-star/SWARM/actions)**
+**[Sources & documentation](https://github.com/olivershadd-star/SWARM)** · **[Toutes les versions](https://github.com/olivershadd-star/SWARM/releases)**
 
 ---
 
