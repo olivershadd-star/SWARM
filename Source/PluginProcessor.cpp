@@ -195,6 +195,24 @@ anks::Patch SwarmProcessor::getScene (int sceneIndex) const
     return {};
 }
 
+void SwarmProcessor::setSceneParameter (int sceneIndex, const juce::String& id, float value)
+{
+    if (! juce::isPositiveAndBelow (sceneIndex, static_cast<int> (scenes.size())) || ! std::isfinite (value))
+        return;
+    for (size_t i = 0; i < patchIds.size(); ++i)
+    {
+        if (id != patchIds[i])
+            continue;
+        const auto& range = parameters.getParameter (id)->getNormalisableRange();
+        const std::lock_guard<std::mutex> guard (sceneWriteMutex);
+        auto& scene = scenes[static_cast<size_t> (sceneIndex)];
+        auto patch = scene.load();
+        patch.*patchFields[i] = range.snapToLegalValue (value);
+        scene.store (patch);
+        return;
+    }
+}
+
 void SwarmProcessor::recallScene (int sceneIndex)
 {
     const auto patch = getScene (sceneIndex);

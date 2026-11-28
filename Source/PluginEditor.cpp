@@ -88,6 +88,14 @@ void SwarmEditor::Theme::drawRotarySlider (juce::Graphics& g, int x, int y, int 
     g.setColour (accent);
     g.drawLine ({centre.getPointOnCircumference (radius * 0.39f, angle),
                  centre.getPointOnCircumference (radius * 0.64f, angle)}, 2.7f);
+    const auto& played = dial.getProperties()["playedPosition"];
+    if (! played.isVoid())
+    {
+        const auto marker = centre.getPointOnCircumference (radius + 0.5f,
+            start + static_cast<float> (played) * (end - start));
+        g.setColour (ink);
+        g.fillEllipse (marker.x - 2.5f, marker.y - 2.5f, 5.0f, 5.0f);
+    }
 }
 
 class SwarmEditor::Control final : public juce::Component
@@ -101,27 +109,59 @@ public:
         label.setColour (juce::Label::textColourId, ink);
         addAndMakeVisible (label);
 
-        slider.setComponentID (key);
-        slider.setTitle (name);
-        slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
-        slider.setColour (juce::Slider::rotarySliderFillColourId, colour);
-        slider.setColour (juce::Slider::rotarySliderOutlineColourId, background);
-        slider.setColour (juce::Slider::thumbColourId, ink);
-        addAndMakeVisible (slider);
+        const auto configure = [this, &name, colour] (juce::Slider& dial, const juce::String& id)
+        {
+            dial.setComponentID (id);
+            dial.setTitle (name);
+            dial.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+            dial.setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
+            dial.setColour (juce::Slider::rotarySliderFillColourId, colour);
+            dial.setColour (juce::Slider::rotarySliderOutlineColourId, background);
+            dial.setColour (juce::Slider::thumbColourId, ink);
+            addChildComponent (dial);
+        };
+        configure (slider, key);
+        configure (sceneSlider, "scene-" + key);
+        slider.setVisible (true);
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
             processor.parameters, key, slider);
+        const auto range = processor.parameters.getParameter (key)->getNormalisableRange();
+        sceneSlider.setNormalisableRange ({
+            static_cast<double> (range.start), static_cast<double> (range.end),
+            [range] (double, double, double v) { return range.convertFrom0to1 (static_cast<float> (v)); },
+            [range] (double, double, double v) { return range.convertTo0to1 (static_cast<float> (v)); },
+            [range] (double, double, double v) { return range.snapToLegalValue (static_cast<float> (v)); }
+        });
+        sceneSlider.onValueChange = [this, &processor]
+        {
+            processor.setSceneParameter (currentScene, key, static_cast<float> (sceneSlider.getValue()));
+            if (auto* editor = findParentComponentOfClass<SwarmEditor>())
+                editor->timerCallback();
+        };
         addAndMakeVisible (readout);
         readout.setJustificationType (juce::Justification::centred);
         readout.setColour (juce::Label::textColourId, subdued);
         readout.setInterceptsMouseClicks (false, false);
     }
 
-    void update (bool sceneMode, float effective)
+    void update (bool sceneMode, int scene, float edited, float effective)
     {
-        slider.setEnabled (! sceneMode);
         slider.setVisible (! sceneMode);
-        const auto value = sceneMode ? static_cast<double> (effective) : slider.getValue();
+        sceneSlider.setVisible (sceneMode);
+        currentScene = scene;
+        if (sceneMode)
+        {
+            sceneSlider.setValue (edited, juce::dontSendNotification);
+            const auto marker = sceneSlider.valueToProportionOfLength (effective);
+            if (sceneSlider.getProperties().set ("playedPosition", marker))
+                sceneSlider.repaint();
+            sceneSlider.setTooltip ("Coin : " + format (edited) + "  /  XY : " + format (effective));
+        }
+        readout.setText (format (sceneMode ? edited : slider.getValue()), juce::dontSendNotification);
+    }
+
+    juce::String format (double value) const
+    {
         juce::String formatted;
         if (key.startsWith ("detune"))
             formatted = juce::String (value, 1) + " ct";
@@ -140,7 +180,7 @@ public:
             formatted = juce::String (value * 1000.0, 0) + " ms";
         else
             formatted = juce::String (value * 100.0, 0) + " %";
-        readout.setText (formatted, juce::dontSendNotification);
+        return formatted;
     }
 
     void resized() override
@@ -149,12 +189,14 @@ public:
         label.setBounds (box.removeFromTop (24));
         readout.setBounds (box.removeFromBottom (20));
         slider.setBounds (box.reduced (8, 0));
+        sceneSlider.setBounds (slider.getBounds());
     }
 
 private:
     juce::String key;
     juce::Label label, readout;
-    juce::Slider slider;
+    juce::Slider slider, sceneSlider;
+    int currentScene = 0;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
 };
 
@@ -255,8 +297,15 @@ SwarmEditor::SwarmEditor (SwarmProcessor& p) : juce::AudioProcessorEditor (&p), 
         const juce::String letter = juce::String::charToString (static_cast<juce::juce_wchar> ('A' + i));
         auto& recall = recallButtons[i];
         recall.setButtonText (letter);
-        recall.setTooltip ("Rappeler la scène " + letter + " en mode LIVE");
-        recall.onClick = [this, i] { processor.recallScene (static_cast<int> (i)); };
+        recall.setComponentID ("corner-" + letter);
+        recall.onClick = [this, i]
+        {
+            if (processor.parameters.getRawParameterValue ("morphOn")->load() >= 0.5f)
+                editedScene = static_cast<int> (i);
+            else
+                processor.recallScene (static_cast<int> (i));
+            timerCallback();
+        };
         addAndMakeVisible (recall);
         auto& save = saveButtons[i];
         save.setButtonText ("CAP " + letter);
@@ -304,13 +353,25 @@ SwarmEditor::~SwarmEditor()
 void SwarmEditor::timerCallback()
 {
     viewingMorph = processor.parameters.getRawParameterValue ("morphOn")->load() >= 0.5f;
-    const auto p = processor.getEffectivePatch();
-    const std::array<float, 24> values {p.detuneA, p.widthA, p.motionA, p.detuneB, p.widthB, p.motionB,
-                                      p.mix, p.cutoff, p.resonance, p.drive, p.attack, p.release, p.output,
-                                      p.tuneA, p.densityA, p.shapeA, p.tuneB, p.densityB, p.shapeB,
-                                      p.lfoRate, p.lfoDepth, p.delayMix, p.delayTime, p.delayFeedback};
+    displayedPatch = processor.getEffectivePatch();
+    const auto valuesFor = [] (const anks::Patch& p)
+    {
+        return std::array<float, 24> {p.detuneA, p.widthA, p.motionA, p.detuneB, p.widthB, p.motionB,
+                                     p.mix, p.cutoff, p.resonance, p.drive, p.attack, p.release, p.output,
+                                     p.tuneA, p.densityA, p.shapeA, p.tuneB, p.densityB, p.shapeB,
+                                     p.lfoRate, p.lfoDepth, p.delayMix, p.delayTime, p.delayFeedback};
+    };
+    const auto values = valuesFor (displayedPatch);
+    const auto edits = viewingMorph ? valuesFor (processor.getScene (editedScene)) : values;
     for (size_t i = 0; i < controls.size(); ++i)
-        controls[i]->update (viewingMorph, values[i]);
+        controls[i]->update (viewingMorph, editedScene, edits[i], values[i]);
+
+    for (size_t i = 0; i < recallButtons.size(); ++i)
+    {
+        auto& button = recallButtons[i];
+        button.setToggleState (viewingMorph && i == static_cast<size_t> (editedScene), juce::dontSendNotification);
+        button.setTooltip (viewingMorph ? "Modifier ce coin sans bouger le pad" : "Rappeler ce coin en LIVE");
+    }
     for (auto& save : saveButtons)
         save.setEnabled (! viewingMorph);
     hearA.setEnabled (! viewingMorph);
@@ -318,7 +379,8 @@ void SwarmEditor::timerCallback()
     // Let JUCE deliver mouse-up to close an in-progress XY gesture.
     if (! pad->isMouseButtonDown())
         pad->setEnabled (viewingMorph);
-    modeLabel.setText (viewingMorph ? "MORPH / A-D pour modifier" : "LIVE / commandes directes",
+    const auto corner = juce::String::charToString (static_cast<juce::juce_wchar> ('A' + editedScene));
+    modeLabel.setText (viewingMorph ? "Coin " + corner + "  /  point blanc = XY" : "LIVE / commandes directes",
                        juce::dontSendNotification);
     repaint();
 }
@@ -347,7 +409,7 @@ void SwarmEditor::paint (juce::Graphics& g)
     text (g, "LFO FILTRE", effectsTitles.removeFromLeft (effectsTitles.getWidth() * 2 / 5), 13.0f, pink, true);
     text (g, "DELAI STEREO", effectsTitles, 13.0f, lime, true);
 
-    const auto p = processor.getEffectivePatch();
+    const auto& p = displayedPatch;
     spectrum (g, bankA.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188),
               pink, p.detuneA, p.widthA, p.motionA, p.densityA, p.tuneA);
     spectrum (g, bankB.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188),

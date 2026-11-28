@@ -1,4 +1,4 @@
-# ANKS LABS — SWARM / 01 (version v0.4)
+# ANKS LABS — SWARM / 01 (version v0.5)
 
 Un **synthétiseur original** à deux essaims de dents de scie et morphing XY. Son esthétique graphique se rapproche volontairement de la philosophie colorée, expressive et immédiate de Native Instruments Super*Saw, **sans reprendre son interface exacte, sa marque ou son code propriétaire**.
 
@@ -79,9 +79,11 @@ Puis lancer un nouveau scan des plugins VST3 dans Ableton Live. Avec Live Lite, 
    Les barres colorées représentent la distribution du désaccordage.
 3. **CAP A–D** mémorise le patch LIVE. Les boutons A–D le rappellent en LIVE
    pour le jouer, le modifier ou le sauvegarder de nouveau.
-4. **MORPH** active le pad XY. Les quatre coins correspondent aux quatre scènes
-   et les valeurs affichées suivent leur interpolation. Cliquez sur A–D pour
-   rappeler et éditer une scène, ou décochez MORPH pour retrouver le patch LIVE.
+4. **MORPH** active le pad XY. Cliquez sur A–D pour sélectionner le coin à
+   éditer pendant que le pad continue de jouer à sa position. Le trait du
+   potard et la valeur affichée correspondent au coin édité. Le point blanc
+   indique la valeur jouée. Chaque modification est enregistrée dans le coin.
+   Décochez MORPH pour retrouver les réglages LIVE.
 5. Enregistrez le projet Ableton pour conserver les paramètres et les scènes.
 
 ## Transformations v0.4

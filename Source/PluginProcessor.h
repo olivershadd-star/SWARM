@@ -35,6 +35,7 @@ public:
     juce::AudioProcessorValueTreeState parameters;
     void captureScene (int sceneIndex);
     void recallScene (int sceneIndex);
+    void setSceneParameter (int sceneIndex, const juce::String& id, float value);
     anks::Patch getScene (int sceneIndex) const;
     anks::Patch getEffectivePatch() const noexcept;
     juce::MidiKeyboardState auditionKeyboard;

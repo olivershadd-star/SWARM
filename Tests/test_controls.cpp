@@ -8,13 +8,14 @@ namespace
 constexpr int blockSize = 256;
 constexpr double sampleRate = 48000.0;
 
-juce::Slider* findSlider (juce::Component& parent, const juce::String& id)
+template <typename ComponentType = juce::Slider>
+ComponentType* findControl (juce::Component& parent, const juce::String& id)
 {
     if (parent.getComponentID() == id)
-        return dynamic_cast<juce::Slider*> (&parent);
+        return dynamic_cast<ComponentType*> (&parent);
 
     for (auto* child : parent.getChildren())
-        if (auto* slider = findSlider (*child, id))
+        if (auto* slider = findControl<ComponentType> (*child, id))
             return slider;
 
     return nullptr;
@@ -63,7 +64,7 @@ bool checkControl (const char* id)
 {
     SwarmProcessor processor;
     std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
-    auto* slider = findSlider (*editor, id);
+    auto* slider = findControl (*editor, id);
     if (slider == nullptr)
         return false;
     const juce::String name (id);
@@ -102,6 +103,44 @@ int main()
     {
         passed = checkControl (id) && passed;
     }
+    {
+        SwarmProcessor editing;
+        setParameter (editing, "morphOn", 1.0f);
+        setParameter (editing, "morphX", 0.25f);
+        setParameter (editing, "morphY", 0.0f);
+        std::unique_ptr<juce::AudioProcessorEditor> editor (editing.createEditor());
+        auto* cornerB = findControl<juce::TextButton> (*editor, "corner-B");
+        auto* cutoff = findControl (*editor, "scene-cutoff");
+        if (cornerB == nullptr || cutoff == nullptr || ! cutoff->isVisible())
+            return 1;
+
+        const auto liveCutoff = editing.parameters.getRawParameterValue ("cutoff")->load();
+        const auto cutoffA = editing.getScene (0).cutoff;
+        const auto initial = editing.getEffectivePatch().cutoff;
+        const auto before = render (editing);
+        cornerB->onClick();
+        passed = passed && std::abs (cutoff->getValue() - editing.getScene (1).cutoff) < 0.1f
+                 && std::abs (editing.getEffectivePatch().cutoff - initial) < 0.1f;
+
+        cutoff->setValue (100.0, juce::sendNotificationSync);
+        const auto effective = editing.getEffectivePatch().cutoff;
+        const auto expected = std::pow (cutoffA, 0.75f) * std::pow (100.0f, 0.25f);
+        const auto after = render (editing);
+        juce::MemoryBlock saved;
+        editing.getStateInformation (saved);
+        SwarmProcessor restoredEdit;
+        restoredEdit.setStateInformation (saved.getData(), static_cast<int> (saved.getSize()));
+        passed = passed && std::abs (effective - expected) < 0.1f && rms (before, &after) > 0.001
+                 && std::abs (editing.getScene (0).cutoff - cutoffA) < 0.1f
+                 && std::abs (editing.getScene (1).cutoff - 100.0f) < 0.1f
+                 && std::abs (editing.parameters.getRawParameterValue ("cutoff")->load() - liveCutoff) < 0.1f
+                 && editing.parameters.getRawParameterValue ("morphOn")->load() > 0.5f
+                 && std::abs (editing.parameters.getRawParameterValue ("morphX")->load() - 0.25f) < 0.0001f
+                 && std::abs (editing.parameters.getRawParameterValue ("morphY")->load()) < 0.0001f
+                 && std::abs (restoredEdit.getEffectivePatch().cutoff - effective) < 0.1f;
+        std::cout << "Scene B edit at fixed XY: " << initial << " -> " << effective << " Hz\n";
+    }
+
     SwarmProcessor morph;
     setParameter (morph, "morphOn", 1.0f);
     setParameter (morph, "morphX", 0.0f);

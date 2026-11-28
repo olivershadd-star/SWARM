@@ -31,6 +31,8 @@ private:
     juce::Label modeLabel;
     juce::Rectangle<int> header, bankA, bankB, morphPanel, master, keyboardRow;
     bool viewingMorph = false;
+    int editedScene = 0;
+    anks::Patch displayedPatch;
 
     void timerCallback() override;
 
