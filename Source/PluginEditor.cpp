@@ -46,6 +46,75 @@ void spectrum (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour colour
     }
 }
 
+void waveform (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour colour, float shape)
+{
+    if (area.isEmpty())
+        return;
+    tile (g, area, background.withAlpha (0.75f));
+    const auto plot = area.reduced (12, 8).toFloat();
+    const auto point = [&plot] (float phase, float level)
+    {
+        return juce::Point<float> (plot.getX() + phase * plot.getWidth(),
+                                   plot.getCentreY() - level * plot.getHeight() * 0.48f);
+    };
+    juce::Path cycle;
+    cycle.startNewSubPath (point (0.0f, -1.0f));
+    cycle.lineTo (point (0.5f, -shape));
+    cycle.lineTo (point (0.5f, shape));
+    cycle.lineTo (point (1.0f, 1.0f));
+    g.setColour (colour.withAlpha (0.22f));
+    g.drawHorizontalLine (juce::roundToInt (plot.getCentreY()), plot.getX(), plot.getRight());
+    g.setColour (colour);
+    g.strokePath (cycle, juce::PathStrokeType (1.8f));
+}
+
+void envelope (juce::Graphics& g, juce::Rectangle<int> area, float attack, float release)
+{
+    if (area.isEmpty())
+        return;
+    const auto time = [] (float seconds)
+    {
+        return seconds < 1.0f ? juce::String (seconds * 1000.0f, 0) + " ms"
+                              : juce::String (seconds, 2) + " s";
+    };
+    auto labels = area.removeFromBottom (15);
+    text (g, "ATTAQUE  " + time (attack), labels.removeFromLeft (labels.getWidth() / 2), 10.0f, pink, true);
+    text (g, "RELACHEMENT  " + time (release), labels, 10.0f, lime, true);
+
+    const auto plot = area.reduced (1, 3).toFloat();
+    const auto attackShare = attack / (attack + release);
+    const auto xMiddle = plot.getX() + attackShare * plot.getWidth();
+    constexpr float levelAtRelease = 0.95021293f; // 1 - exp(-3)
+    g.setColour (subdued.withAlpha (0.25f));
+    g.drawVerticalLine (juce::roundToInt (xMiddle), plot.getY(), plot.getBottom());
+    g.drawHorizontalLine (juce::roundToInt (plot.getBottom()), plot.getX(), plot.getRight());
+
+    juce::Path rise, fall;
+    for (int i = 0; i <= 36; ++i)
+    {
+        const float progress = static_cast<float> (i) / 36.0f;
+        const float decay = std::exp (-3.0f * progress);
+        const auto rising = juce::Point<float> (juce::jmap (progress, plot.getX(), xMiddle),
+                                               plot.getY() + decay * plot.getHeight());
+        const auto falling = juce::Point<float> (juce::jmap (progress, xMiddle, plot.getRight()),
+                                                plot.getBottom() - levelAtRelease * decay * plot.getHeight());
+        if (i == 0)
+        {
+            rise.startNewSubPath (rising);
+            fall.startNewSubPath (falling);
+        }
+        else
+        {
+            rise.lineTo (rising);
+            fall.lineTo (falling);
+        }
+    }
+    g.setColour (pink);
+    g.strokePath (rise, juce::PathStrokeType (1.6f));
+    g.setColour (lime);
+    g.strokePath (fall, juce::PathStrokeType (1.6f));
+}
+
 void setParameter (SwarmProcessor& processor, const char* id, float normalized)
 {
     auto* parameter = processor.parameters.getParameter (id);
@@ -209,6 +278,16 @@ public:
         setTitle ("Morph X/Y");
     }
 
+    void refresh()
+    {
+        const juce::Point<float> coords (x()->getValue(), y()->getValue());
+        if (coords != displayedPosition)
+        {
+            displayedPosition = coords;
+            repaint();
+        }
+    }
+
     void paint (juce::Graphics& g) override
     {
         const auto box = getLocalBounds().toFloat();
@@ -221,17 +300,23 @@ public:
         g.drawRect (plot, 1.0f);
         g.drawHorizontalLine (juce::roundToInt (plot.getCentreY()), plot.getX(), plot.getRight());
         g.drawVerticalLine (juce::roundToInt (plot.getCentreX()), plot.getY(), plot.getBottom());
-        const auto px = plot.getX() + x()->getValue() * plot.getWidth();
-        const auto py = plot.getY() + y()->getValue() * plot.getHeight();
+        const auto morphX = x()->getValue();
+        const auto morphY = y()->getValue();
+        const auto px = plot.getX() + morphX * plot.getWidth();
+        const auto py = plot.getY() + morphY * plot.getHeight();
         g.setColour (isEnabled() ? ink : subdued);
         g.fillEllipse (px - 6.0f, py - 6.0f, 12.0f, 12.0f);
         constexpr const char* names[] { "A", "B", "C", "D" };
+        const float weights[] { (1.0f - morphX) * (1.0f - morphY), morphX * (1.0f - morphY),
+                                (1.0f - morphX) * morphY, morphX * morphY };
         for (int i = 0; i < 4; ++i)
         {
-            const auto vx = (i % 2 == 0) ? plot.getX() : plot.getRight();
-            const auto vy = (i < 2) ? plot.getY() : plot.getBottom();
-            text (g, names[i], {juce::roundToInt (vx) - 6, juce::roundToInt (vy) - 9, 18, 18},
-                  11.0f, ink, true);
+            const auto vx = i % 2 == 0 ? plot.getX() + 7.0f : plot.getRight() - 54.0f;
+            const auto vy = i < 2 ? plot.getY() + 3.0f : plot.getBottom() - 20.0f;
+            auto label = juce::String (names[i]);
+            if (isEnabled())
+                label += " " + juce::String (juce::roundToInt (weights[i] * 100.0f)) + "%";
+            text (g, label, {juce::roundToInt (vx), juce::roundToInt (vy), 51, 17}, 11.0f, ink, true);
         }
     }
 
@@ -251,6 +336,7 @@ public:
 
 private:
     SwarmProcessor& processor;
+    juce::Point<float> displayedPosition;
     juce::Rectangle<float> area() const { return getLocalBounds().toFloat().reduced (14.0f); }
     juce::RangedAudioParameter* x() const { return processor.parameters.getParameter ("morphX"); }
     juce::RangedAudioParameter* y() const { return processor.parameters.getParameter ("morphY"); }
@@ -261,7 +347,7 @@ private:
             return;
         x()->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, (point.x - bounds.getX()) / bounds.getWidth()));
         y()->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, (point.y - bounds.getY()) / bounds.getHeight()));
-        repaint();
+        refresh();
     }
 };
 
@@ -353,6 +439,7 @@ SwarmEditor::~SwarmEditor()
 void SwarmEditor::timerCallback()
 {
     viewingMorph = processor.parameters.getRawParameterValue ("morphOn")->load() >= 0.5f;
+    const auto previous = displayedPatch;
     displayedPatch = processor.getEffectivePatch();
     const auto valuesFor = [] (const anks::Patch& p)
     {
@@ -382,7 +469,31 @@ void SwarmEditor::timerCallback()
     const auto corner = juce::String::charToString (static_cast<juce::juce_wchar> ('A' + editedScene));
     modeLabel.setText (viewingMorph ? "Coin " + corner + "  /  point blanc = XY" : "LIVE / commandes directes",
                        juce::dontSendNotification);
-    repaint();
+    pad->refresh();
+    const auto& p = displayedPatch;
+    if (std::array<float, 6> {p.detuneA, p.widthA, p.motionA, p.densityA, p.tuneA, p.shapeA}
+        != std::array<float, 6> {previous.detuneA, previous.widthA, previous.motionA,
+                                 previous.densityA, previous.tuneA, previous.shapeA})
+        repaint (bankA.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188));
+    if (std::array<float, 6> {p.detuneB, p.widthB, p.motionB, p.densityB, p.tuneB, p.shapeB}
+        != std::array<float, 6> {previous.detuneB, previous.widthB, previous.motionB,
+                                 previous.densityB, previous.tuneB, previous.shapeB})
+        repaint (bankB.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188));
+    if (std::array<float, 2> {p.attack, p.release} != std::array<float, 2> {previous.attack, previous.release})
+        repaint (envelopePlot);
+
+    const int level = juce::roundToInt (115.0f * std::sqrt (juce::jlimit (0.0f, 1.0f, processor.getOutputPeak())));
+    if (level != meterPixels)
+    {
+        meterPixels = level;
+        repaint (meterBox);
+    }
+    const int cutoff = juce::roundToInt (processor.getFilterCutoff() / 10.0f) * 10;
+    if (cutoff != displayedCutoff)
+    {
+        displayedCutoff = cutoff;
+        repaint (cutoffReadout);
+    }
 }
 
 void SwarmEditor::paint (juce::Graphics& g)
@@ -391,10 +502,9 @@ void SwarmEditor::paint (juce::Graphics& g)
     text (g, "SWARM / 01", header.withWidth (260), 35.0f, ink, true);
     text (g, "ANKS LABS", header.withTrimmedLeft (260).withWidth (120), 13.0f, subdued, true);
 
-    auto meter = header.withLeft (header.getRight() - 115).withSizeKeepingCentre (115, 10);
-    tile (g, meter, panel);
-    const auto level = std::sqrt (juce::jlimit (0.0f, 1.0f, processor.getOutputPeak()));
-    tile (g, meter.withWidth (juce::roundToInt (115.0f * level)), lime);
+    tile (g, meterBox, panel);
+    tile (g, meterBox.withWidth (meterPixels), lime);
+    envelope (g, envelopePlot, displayedPatch.attack, displayedPatch.release);
 
     tile (g, bankA, juce::Colour (0xff512c51));
     tile (g, bankB, juce::Colour (0xff34432c));
@@ -410,16 +520,24 @@ void SwarmEditor::paint (juce::Graphics& g)
     text (g, "DELAI STEREO", effectsTitles, 13.0f, lime, true);
 
     const auto& p = displayedPatch;
-    spectrum (g, bankA.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188),
-              pink, p.detuneA, p.widthA, p.motionA, p.densityA, p.tuneA);
-    spectrum (g, bankB.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188),
-              lime, p.detuneB, p.widthB, p.motionB, p.densityB, p.tuneB);
+    const auto cutoffText = displayedCutoff < 1000 ? juce::String (displayedCutoff) + " Hz"
+                                                   : juce::String (displayedCutoff / 1000.0, 2) + " kHz";
+    text (g, cutoffText, cutoffReadout, 12.0f, subdued);
+
+    auto a = bankA.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188);
+    auto b = bankB.reduced (16, 0).withTrimmedTop (55).withTrimmedBottom (188);
+    waveform (g, a.removeFromBottom (a.getHeight() / 3), pink, p.shapeA);
+    waveform (g, b.removeFromBottom (b.getHeight() / 3), lime, p.shapeB);
+    spectrum (g, a.withTrimmedBottom (4), pink, p.detuneA, p.widthA, p.motionA, p.densityA, p.tuneA);
+    spectrum (g, b.withTrimmedBottom (4), lime, p.detuneB, p.widthB, p.motionB, p.densityB, p.tuneB);
 }
 
 void SwarmEditor::resized()
 {
     auto layout = getLocalBounds().reduced (16, 12);
     header = layout.removeFromTop (57);
+    envelopePlot = header.withTrimmedLeft (365).withTrimmedRight (145).reduced (5, 8);
+    meterBox = header.withLeft (header.getRight() - 115).withSizeKeepingCentre (115, 10);
     if (keyboard != nullptr)
     {
         keyboardRow = layout.removeFromBottom (65);
@@ -431,6 +549,7 @@ void SwarmEditor::resized()
         layout.removeFromBottom (10);
     }
     master = layout.removeFromBottom (213);
+    cutoffReadout = master.reduced (14, 0).withTrimmedTop (110).withHeight (18).withTrimmedLeft (90).withWidth (88);
     layout.removeFromBottom (10);
 
     const int middleWidth = layout.getWidth() * 31 / 100;

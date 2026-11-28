@@ -1,4 +1,4 @@
-# ANKS LABS — SWARM / 01 (version v0.5)
+# ANKS LABS — SWARM / 01 (version v0.6)
 
 Un **synthétiseur original** à deux essaims de dents de scie et morphing XY. Son esthétique graphique se rapproche volontairement de la philosophie colorée, expressive et immédiate de Native Instruments Super*Saw, **sans reprendre son interface exacte, sa marque ou son code propriétaire**.
 
@@ -85,6 +85,16 @@ Puis lancer un nouveau scan des plugins VST3 dans Ableton Live. Avec Live Lite, 
    indique la valeur jouée. Chaque modification est enregistrée dans le coin.
    Décochez MORPH pour retrouver les réglages LIVE.
 5. Enregistrez le projet Ableton pour conserver les paramètres et les scènes.
+
+## Courbes et réponse v0.6
+
+Les banques affichent la forme théorique d’un oscillateur après le réglage
+Saw/Pulse, ainsi que la répartition des oscillateurs. Les courbes d’attaque
+et de relâchement partagent le même axe temporel. La séparation marque le
+relâchement de la touche après trois constantes d’attaque. Le tracé montre
+ensuite trois constantes de relâchement. Le panneau LFO affiche la
+fréquence de coupure appliquée par le moteur. Le mix et la sortie utilisent
+une constante de lissage de 4 ms. Les autres réglages conservent 12 ms.
 
 ## Transformations v0.4
 

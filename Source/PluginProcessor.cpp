@@ -159,6 +159,7 @@ void SwarmProcessor::prepareToPlay (double sampleRate, int)
     outputPeak.store (0.0f, std::memory_order_relaxed);
     engine.setPatch (readLivePatch());
     engine.prepare (sampleRate);
+    samplesPerMeterDecaySecond = std::max (1.0, sampleRate);
     engine.setVoiceLimit (8);
 }
 
@@ -310,7 +311,9 @@ void SwarmProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         peak = std::max ({peak, std::abs (left[sample]), std::abs (right[sample])});
     }
     const auto previousPeak = outputPeak.load (std::memory_order_relaxed);
-    outputPeak.store (std::max (peak, previousPeak * 0.97f), std::memory_order_relaxed);
+    const auto decay = static_cast<float> (std::exp (-numSamples / (0.175 * samplesPerMeterDecaySecond)));
+    outputPeak.store (std::max (peak, previousPeak * decay), std::memory_order_relaxed);
+    appliedCutoff.store (engine.getFilterCutoff(), std::memory_order_relaxed);
 }
 
 void SwarmProcessor::getStateInformation (juce::MemoryBlock& destination)

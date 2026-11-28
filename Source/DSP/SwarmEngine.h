@@ -99,6 +99,7 @@ public:
     {
         sampleRate = std::max (newSampleRate, 8000.0);
         smoothingAlpha = 1.0f - std::exp (-1.0f / (0.012f * static_cast<float> (sampleRate)));
+        levelSmoothingAlpha = -std::expm1 (-1.0f / (0.004f * static_cast<float> (sampleRate)));
         allNotesOff();
         ic1[0] = ic1[1] = ic2[0] = ic2[1] = 0.0f;
         filterUpdateCountdown = 0;
@@ -112,6 +113,7 @@ public:
     }
 
     void setPatch (const Patch& p) noexcept { target = p; }
+    float getFilterCutoff() const noexcept { return filterCutoff; }
     void setVoiceLimit (int voices) noexcept { voiceLimit = std::clamp (voices, 1, maxPolyphony); }
     int getActiveVoiceCount() const noexcept
     {
@@ -341,7 +343,7 @@ private:
         sm (current.detuneB, target.detuneB);
         sm (current.widthB, target.widthB);
         sm (current.motionB, target.motionB);
-        sm (current.mix, target.mix);
+        current.mix += (target.mix - current.mix) * levelSmoothingAlpha;
         // Smoothing logarithmically isn't necessary for small per-sample steps,
         // while the XY interpolation itself is already logarithmic.
         sm (current.cutoff, target.cutoff);
@@ -349,7 +351,7 @@ private:
         sm (current.drive, target.drive);
         sm (current.attack, target.attack);
         sm (current.release, target.release);
-        sm (current.output, target.output);
+        current.output += (target.output - current.output) * levelSmoothingAlpha;
         sm (current.tuneA, target.tuneA);
         sm (current.densityA, target.densityA);
         sm (current.shapeA, target.shapeA);
@@ -370,6 +372,7 @@ private:
         const float sweep = std::exp2 (triangle (lfoPhase) * current.lfoDepth * 3.0f);
         const float fc = std::clamp (current.cutoff * sweep, 100.0f,
                                     std::min (18000.0f, static_cast<float> (sampleRate * 0.44)));
+        filterCutoff = fc;
         const float g = std::tan (static_cast<float> (pi) * fc / static_cast<float> (sampleRate));
         const float q = 0.55f + clamp01 (current.resonance) * 7.5f;
         const float k = 1.0f / q;
@@ -398,6 +401,8 @@ private:
     float pitchFactor = 1.0f;
     Patch current {}, target {};
     float smoothingAlpha = 0.01f;
+    float levelSmoothingAlpha = 0.03f;
+    float filterCutoff = 9500.0f;
     float ic1[2] {}, ic2[2] {};
     float a1 = 1.0f, a2 = 0.0f, a3 = 0.0f;
     int filterUpdateCountdown = 0;

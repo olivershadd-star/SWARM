@@ -36,6 +36,34 @@ static void saveWav (const char* filename, const std::vector<float>& stereo, int
 int main (int argc, char** argv)
 {
     constexpr int sr = 48000;
+    {
+        anks::SwarmEngine reference, fading;
+        anks::Patch patch;
+        reference.prepare (sr);
+        fading.prepare (sr);
+        reference.noteOn (57, 0.85f);
+        fading.noteOn (57, 0.85f);
+        float refL = 0.0f, refR = 0.0f, fadeL = 0.0f, fadeR = 0.0f;
+        for (int i = 0; i < sr / 4; ++i)
+        {
+            reference.renderSample (refL, refR);
+            fading.renderSample (fadeL, fadeR);
+        }
+        patch.output = 0.0f;
+        fading.setPatch (patch);
+        for (int i = 0; i < 576; ++i) // 12 ms at 48 kHz, three time constants.
+        {
+            reference.renderSample (refL, refR);
+            fading.renderSample (fadeL, fadeR);
+        }
+        const float referenceMagnitude = std::max (std::abs (refL), std::abs (refR));
+        const float fadedMagnitude = std::max (std::abs (fadeL), std::abs (fadeR));
+        if (referenceMagnitude < 1.0e-6f || std::abs (fadedMagnitude / referenceMagnitude - std::exp (-3.0f)) > 0.001f)
+        {
+            std::cerr << "Output smoothing did not reach 95% in about 12 ms\n";
+            return 1;
+        }
+    }
     anks::SwarmEngine engine;
     engine.prepare (sr);
     anks::Patch a, b, c, d;

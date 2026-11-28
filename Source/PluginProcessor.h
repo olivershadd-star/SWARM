@@ -40,6 +40,7 @@ public:
     anks::Patch getEffectivePatch() const noexcept;
     juce::MidiKeyboardState auditionKeyboard;
     void setAuditionChord (bool playing) noexcept;
+    float getFilterCutoff() const noexcept { return appliedCutoff.load (std::memory_order_relaxed); }
     float getOutputPeak() const noexcept { return outputPeak.load (std::memory_order_relaxed); }
 
 private:
@@ -59,6 +60,8 @@ private:
     std::array<anks::Patch, 4> audioScenes {};
     std::atomic<bool> auditionChord { false };
     std::atomic<float> outputPeak { 0.0f };
+    std::atomic<float> appliedCutoff { 9500.0f };
+    double samplesPerMeterDecaySecond = 48000.0;
     bool chordPlaying = false;
     static constexpr int firstKey = 48;
     static constexpr int lastKey = 83;

@@ -33,6 +33,9 @@ private:
     bool viewingMorph = false;
     int editedScene = 0;
     anks::Patch displayedPatch;
+    juce::Rectangle<int> envelopePlot, meterBox, cutoffReadout;
+    int meterPixels = 0;
+    int displayedCutoff = 9500;
 
     void timerCallback() override;
 
