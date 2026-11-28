@@ -47,6 +47,10 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout makeParameterLayout();
     anks::Patch readLivePatch() const noexcept;
     static constexpr int patchFieldCount = 24;
+    std::array<const std::atomic<float>*, patchFieldCount> liveValues {};
+    const std::atomic<float>* morphEnabled = nullptr;
+    const std::atomic<float>* morphX = nullptr;
+    const std::atomic<float>* morphY = nullptr;
     struct AtomicScene
     {
         std::array<std::atomic<float>, patchFieldCount> data {};

@@ -1,4 +1,4 @@
-# ANKS LABS — SWARM / 01 (version v0.6)
+# ANKS LABS — SWARM / 01 (version v0.7)
 
 Un **synthétiseur original** à deux essaims de dents de scie et morphing XY. Son esthétique graphique se rapproche volontairement de la philosophie colorée, expressive et immédiate de Native Instruments Super*Saw, **sans reprendre son interface exacte, sa marque ou son code propriétaire**.
 

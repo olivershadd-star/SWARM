@@ -103,6 +103,8 @@ public:
         allNotesOff();
         ic1[0] = ic1[1] = ic2[0] = ic2[1] = 0.0f;
         filterUpdateCountdown = 0;
+        cachedAttack = cachedRelease = cachedDrive = -1.0f;
+        cachedResonance = -1.0f;
         lfoPhase = 0.0f;
         delayWrite = 0;
         const auto capacity = static_cast<size_t> (sampleRate * 0.8) + 4;
@@ -202,8 +204,19 @@ public:
         if (--filterUpdateCountdown <= 0) { updateFilter(); filterUpdateCountdown = 16; }
 
         float outL = 0.0f, outR = 0.0f;
-        const float attackCoef = 1.0f - std::exp (-1.0f / (std::max (0.005f, current.attack) * static_cast<float> (sampleRate)));
-        const float releaseCoef = 1.0f - std::exp (-1.0f / (std::max (0.03f, current.release) * static_cast<float> (sampleRate)));
+        if (current.attack != cachedAttack)
+        {
+            cachedAttack = current.attack;
+            attackCoef = 1.0f - std::exp (-1.0f / (std::max (0.005f, current.attack) * static_cast<float> (sampleRate)));
+        }
+        if (current.release != cachedRelease)
+        {
+            cachedRelease = current.release;
+            releaseCoef = 1.0f - std::exp (-1.0f / (std::max (0.03f, current.release) * static_cast<float> (sampleRate)));
+        }
+
+        const float mixA = 1.0f - current.mix;
+        const float mixB = current.mix;
 
         for (int vi = 0; vi < voiceLimit; ++vi)
         {
@@ -216,12 +229,12 @@ public:
             const float frequency = v.baseFrequency * pitchFactor;
             float aL = 0.0f, aR = 0.0f, bL = 0.0f, bR = 0.0f;
             renderBank (v.osc[0], frequency * pitchA, current.detuneA, current.widthA, current.motionA,
-                        current.densityA, current.shapeA, aL, aR, false);
+                        current.densityA, current.shapeA, aL, aR, false, mixA > 0.0f);
             renderBank (v.osc[1], frequency * pitchB, current.detuneB, current.widthB, current.motionB,
-                        current.densityB, current.shapeB, bL, bR, true);
+                        current.densityB, current.shapeB, bL, bR, true, mixB > 0.0f);
             const float gain = v.envelope * (0.28f + 0.72f * v.velocity);
-            outL += (aL * (1.0f - current.mix) + bL * current.mix) * gain;
-            outR += (aR * (1.0f - current.mix) + bR * current.mix) * gain;
+            outL += (aL * mixA + bL * mixB) * gain;
+            outR += (aR * mixA + bR * mixB) * gain;
         }
 
         // Voice normalization keeps chords usable without drastic level jumps.
@@ -230,10 +243,17 @@ public:
         outL = lowpass (outL, 0);
         outR = lowpass (outR, 1);
 
-        const float saturation = 1.0f + 11.0f * current.drive * current.drive;
-        const float makeup = 1.0f / std::tanh (saturation);
-        outL = std::tanh (outL * saturation) * makeup;
-        outR = std::tanh (outR * saturation) * makeup;
+        if (current.drive != cachedDrive)
+        {
+            cachedDrive = current.drive;
+            saturation = 1.0f + 11.0f * current.drive * current.drive;
+            makeup = 1.0f / std::tanh (saturation);
+        }
+        if (outL != 0.0f || outR != 0.0f)
+        {
+            outL = std::tanh (outL * saturation) * makeup;
+            outR = std::tanh (outR * saturation) * makeup;
+        }
         applyDelay (outL, outR);
         outputLeft = outL * current.output;
         outputRight = outR * current.output;
@@ -296,7 +316,7 @@ private:
 
     void renderBank (Oscillator (&bank)[oscillatorsPerSwarm], float rootFrequency,
                      float detune, float width, float motion, float density, float shape,
-                     float& left, float& right, bool invertPan) noexcept
+                     float& left, float& right, bool invertPan, bool audible) noexcept
     {
         const float normalizer = 1.0f / density;
         for (int i = 0; i < oscillatorsPerSwarm; ++i)
@@ -308,14 +328,7 @@ private:
             // Second-order Taylor approx of 2^(cents/1200): avoids millions of exp2 calls.
             const float ratio = 1.0f + 0.00057762265f * cents + 0.000000166825f * cents * cents;
             const float delta = std::clamp (rootFrequency * ratio / static_cast<float> (sampleRate), 0.0000001f, 0.48f);
-            const float saw = 2.0f * o.phase - 1.0f - polyBlep (o.phase, delta);
-            float waveform = saw;
-            if (shape > 0.0001f)
-            {
-                const float shiftedPhase = o.phase < 0.5f ? o.phase + 0.5f : o.phase - 0.5f;
-                const float shiftedSaw = 2.0f * shiftedPhase - 1.0f - polyBlep (shiftedPhase, delta);
-                waveform = lerp (saw, saw - shiftedSaw, shape);
-            }
+            const float phase = o.phase;
             o.phase += delta;
             if (o.phase >= 1.0f) o.phase -= 1.0f;
 
@@ -323,11 +336,23 @@ private:
             o.motionPhase += rate / static_cast<float> (sampleRate);
             if (o.motionPhase >= 1.0f) o.motionPhase -= 1.0f;
 
+            // Keep both phases running so reopening a bank or voice pair preserves its trajectory.
+            const float pair = std::abs (static_cast<float> (i - oscillatorsPerSwarm / 2));
+            const float weight = pair == 0.0f ? 1.0f : clamp01 ((density + 1.0f) * 0.5f - pair);
+            if (! audible || weight <= 0.0f)
+                continue;
+
+            const float saw = 2.0f * phase - 1.0f - polyBlep (phase, delta);
+            float waveform = saw;
+            if (shape > 0.0001f)
+            {
+                const float shiftedPhase = phase < 0.5f ? phase + 0.5f : phase - 0.5f;
+                const float shiftedSaw = 2.0f * shiftedPhase - 1.0f - polyBlep (shiftedPhase, delta);
+                waveform = lerp (saw, saw - shiftedSaw, shape);
+            }
             const float panMotion = triangle (o.motionPhase + (o.motionPhase > 0.63f ? -0.63f : 0.37f));
             const float pan = clamp01 (0.5f + (invertPan ? -1.0f : 1.0f) * position * width * 0.45f
                                          + panMotion * motion * 0.12f);
-            const float pair = std::abs (static_cast<float> (i - oscillatorsPerSwarm / 2));
-            const float weight = pair == 0.0f ? 1.0f : clamp01 ((density + 1.0f) * 0.5f - pair);
             const float gain = waveform * weight * (1.0f + movement * motion * 0.18f) * normalizer;
             left += gain * (1.0f - pan);
             right += gain * pan;
@@ -369,10 +394,14 @@ private:
     {
         pitchA = std::exp2 (current.tuneA / 12.0f);
         pitchB = std::exp2 (current.tuneB / 12.0f);
-        const float sweep = std::exp2 (triangle (lfoPhase) * current.lfoDepth * 3.0f);
+        const float sweep = current.lfoDepth == 0.0f
+            ? 1.0f : std::exp2 (triangle (lfoPhase) * current.lfoDepth * 3.0f);
         const float fc = std::clamp (current.cutoff * sweep, 100.0f,
                                     std::min (18000.0f, static_cast<float> (sampleRate * 0.44)));
+        if (fc == filterCutoff && current.resonance == cachedResonance)
+            return;
         filterCutoff = fc;
+        cachedResonance = current.resonance;
         const float g = std::tan (static_cast<float> (pi) * fc / static_cast<float> (sampleRate));
         const float q = 0.55f + clamp01 (current.resonance) * 7.5f;
         const float k = 1.0f / q;
@@ -403,6 +432,10 @@ private:
     float smoothingAlpha = 0.01f;
     float levelSmoothingAlpha = 0.03f;
     float filterCutoff = 9500.0f;
+    float cachedResonance = -1.0f;
+    float cachedAttack = -1.0f, cachedRelease = -1.0f, cachedDrive = -1.0f;
+    float attackCoef = 0.0f, releaseCoef = 0.0f;
+    float saturation = 1.0f, makeup = 1.0f;
     float ic1[2] {}, ic2[2] {};
     float a1 = 1.0f, a2 = 0.0f, a3 = 0.0f;
     int filterUpdateCountdown = 0;

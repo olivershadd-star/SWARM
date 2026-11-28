@@ -126,6 +126,11 @@ SwarmProcessor::SwarmProcessor()
     : juce::AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       parameters (*this, nullptr, "ANKSParameters", makeParameterLayout())
 {
+    for (size_t i = 0; i < patchIds.size(); ++i)
+        liveValues[i] = parameters.getRawParameterValue (patchIds[i]);
+    morphEnabled = parameters.getRawParameterValue ("morphOn");
+    morphX = parameters.getRawParameterValue ("morphX");
+    morphY = parameters.getRawParameterValue ("morphY");
     const auto defaults = factoryScenes();
     audioScenes = defaults;
     for (size_t i = 0; i < scenes.size(); ++i) scenes[i].store (defaults[i]);
@@ -173,10 +178,9 @@ bool SwarmProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 
 anks::Patch SwarmProcessor::readLivePatch() const noexcept
 {
-    const auto read = [this] (const char* id) { return parameters.getRawParameterValue (id)->load (std::memory_order_relaxed); };
     anks::Patch p;
     for (size_t i = 0; i < patchIds.size(); ++i)
-        p.*patchFields[i] = read (patchIds[i]);
+        p.*patchFields[i] = liveValues[i]->load (std::memory_order_relaxed);
     return p;
 }
 
@@ -253,13 +257,17 @@ void SwarmProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     const int numSamples = buffer.getNumSamples();
     if (numSamples == 0) return;
 
-    const auto read = [this] (const char* id) { return parameters.getRawParameterValue (id)->load (std::memory_order_relaxed); };
-    anks::Patch target = readLivePatch();
-    if (read ("morphOn") >= 0.5f)
+    anks::Patch target;
+    if (morphEnabled->load (std::memory_order_relaxed) >= 0.5f)
     {
         for (size_t i = 0; i < scenes.size(); ++i)
             scenes[i].tryLoad (audioScenes[i]);
-        target = anks::interpolateScenes (audioScenes, read ("morphX"), read ("morphY"));
+        target = anks::interpolateScenes (audioScenes, morphX->load (std::memory_order_relaxed),
+                                           morphY->load (std::memory_order_relaxed));
+    }
+    else
+    {
+        target = readLivePatch();
     }
     engine.setPatch (target);
     if (wrapperType == wrapperType_Standalone)
